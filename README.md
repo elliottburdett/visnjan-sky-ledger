@@ -4,7 +4,7 @@ An all-sky photometric survey run from [Višnjan Observatory](https://en.wikiped
 (45.291°N, 13.749°E), imaging every tile visible from the site in two broadband
 filters, and keeping a version-controlled record of what has actually been observed.
 
-**[Open the planner →](https://USER.github.io/visnjan-sky-ledger/)**
+**[Open the planner →](https://elliottburdett.github.io/visnjan-sky-ledger/)**
 
 ## The survey
 

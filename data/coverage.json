@@ -1,0 +1,16 @@
+{
+  "survey": "Visnjan all-sky G/R",
+  "site": {
+    "lat": 45.29082,
+    "lon": 13.74926,
+    "tz": "Europe/Zagreb"
+  },
+  "grid": {
+    "fov_ra": 2.45,
+    "fov_dec": 1.63,
+    "overlap": 0.1,
+    "dec_min": -20,
+    "tiles": 8631
+  },
+  "nights": []
+}

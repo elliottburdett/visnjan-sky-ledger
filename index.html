@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Višnjan Sky Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --void:#f4f3ee; --panel:#ffffff; --panel-2:#e9e7df; --edge:#d6d3c8;
+  --ink:#171a24; --ink-dim:#5a6072;
+  --accent:#37509b; --accent-soft:#e2e6f4;
+  --cov-0:#dcdad2; --cov-1:#6d84c9; --cov-2:#1d8ea1;
+  --plan:#c47a1e; --moon:#8a7bbf;
+  --ok:#2f8f5b; --warn:#b8802b; --bad:#b8453c;
+  --grid:rgba(55,80,155,0.22); --sky:#eceae2;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --void:#0a0d16; --panel:#131827; --panel-2:#1b2133; --edge:#28304a;
+    --ink:#e6e8f2; --ink-dim:#8b92ad;
+    --accent:#7f95dd; --accent-soft:#1c2340;
+    --cov-0:#1c2233; --cov-1:#3f5aa6; --cov-2:#56c7d6;
+    --plan:#f0a850; --moon:#b0a2e8;
+    --ok:#4fbf7b; --warn:#e0a33f; --bad:#e0655a;
+    --grid:rgba(127,149,221,0.20); --sky:#0e1220;
+  }
+}
+:root[data-theme="dark"]{
+  --void:#0a0d16; --panel:#131827; --panel-2:#1b2133; --edge:#28304a;
+  --ink:#e6e8f2; --ink-dim:#8b92ad;
+  --accent:#7f95dd; --accent-soft:#1c2340;
+  --cov-0:#1c2233; --cov-1:#3f5aa6; --cov-2:#56c7d6;
+  --plan:#f0a850; --moon:#b0a2e8;
+  --ok:#4fbf7b; --warn:#e0a33f; --bad:#e0655a;
+  --grid:rgba(127,149,221,0.20); --sky:#0e1220;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--void);color:var(--ink);font-family:'Archivo',system-ui,sans-serif;font-size:14px}
+.app{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+
+header{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;
+  padding:14px 22px;border-bottom:1px solid var(--edge);background:var(--panel);flex:none}
+h1{font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:1.3rem;margin:0;letter-spacing:.2px}
+.sub{color:var(--ink-dim);font-size:.82rem;margin:0}
+.progress-strip{margin-left:auto;display:flex;gap:22px;align-items:center}
+.pstat{text-align:right}
+.pstat .k{font-size:.64rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-dim)}
+.pstat .v{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-size:1.05rem}
+
+main{flex:1;display:grid;grid-template-columns:1fr 336px;min-height:0}
+@media (max-width:900px){main{grid-template-columns:1fr}}
+
+.mapwrap{position:relative;min-width:0;display:flex;flex-direction:column;background:var(--void)}
+#sky{flex:1;width:100%;display:block;min-height:320px;touch-action:none;cursor:grab}
+#sky.drag{cursor:grabbing}
+.maplegend{display:flex;gap:15px;flex-wrap:wrap;align-items:center;
+  padding:9px 18px;border-top:1px solid var(--edge);font-size:.74rem;color:var(--ink-dim);flex:none}
+.key{display:flex;align-items:center;gap:6px}
+.chip{width:12px;height:9px;border-radius:2px;flex:none}
+.readout{position:absolute;left:16px;top:14px;background:var(--panel);border:1px solid var(--edge);
+  border-radius:7px;padding:8px 11px;font-family:'IBM Plex Mono',monospace;font-size:.72rem;
+  line-height:1.6;pointer-events:none;opacity:0;transition:opacity .12s;max-width:240px}
+.readout.on{opacity:1}
+.viewctl{position:absolute;right:14px;top:14px;display:flex;gap:6px}
+.viewctl button{padding:5px 9px;font-size:.72rem}
+.hint{position:absolute;left:16px;bottom:54px;font-family:'IBM Plex Mono',monospace;
+  font-size:.68rem;color:var(--ink-dim);pointer-events:none}
+
+aside{border-left:1px solid var(--edge);background:var(--panel);padding:16px;
+  display:flex;flex-direction:column;gap:15px;overflow-y:auto;min-height:0}
+@media (max-width:900px){aside{border-left:none;border-top:1px solid var(--edge)}}
+.sect>h2{font-size:.66rem;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-dim);
+  margin:0 0 9px;font-weight:600}
+.row{display:flex;justify-content:space-between;gap:10px;align-items:baseline;
+  padding:4px 0;border-top:1px solid var(--edge)}
+.row:first-of-type{border-top:none}
+.row .k{color:var(--ink-dim);font-size:.79rem}
+.row .v{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-size:.83rem;text-align:right}
+
+input[type=date],input[type=time],input[type=number]{
+  font-family:'IBM Plex Mono',monospace;font-size:.82rem;background:var(--panel-2);
+  color:var(--ink);border:1px solid var(--edge);border-radius:6px;padding:6px 8px;width:100%}
+label.fld{display:block;margin-bottom:8px}
+label.fld span{display:block;font-size:.7rem;color:var(--ink-dim);margin-bottom:3px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+button{font-family:'Archivo',sans-serif;font-size:.8rem;font-weight:600;cursor:pointer;
+  border:1px solid var(--edge);background:var(--panel-2);color:var(--ink);border-radius:6px;padding:8px 10px}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btnrow{display:flex;gap:7px;flex-wrap:wrap}
+
+.verdict{border-radius:8px;padding:10px 12px;border:1px solid var(--edge);background:var(--panel-2)}
+.verdict .head{display:flex;align-items:center;gap:8px;font-weight:700;font-size:.9rem}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+.verdict .why{font-size:.76rem;color:var(--ink-dim);margin-top:5px;line-height:1.5}
+.hourly{display:flex;gap:2px;margin-top:9px;height:26px;align-items:flex-end}
+.hbar{flex:1;border-radius:2px 2px 0 0;min-height:2px}
+.hlabels{display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;
+  font-size:.62rem;color:var(--ink-dim);margin-top:3px}
+
+table{width:100%;border-collapse:collapse;font-size:.76rem}
+th{text-align:left;font-size:.64rem;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--ink-dim);font-weight:600;padding:5px 6px;border-bottom:1px solid var(--edge)}
+td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mono',monospace;
+  font-variant-numeric:tabular-nums}
+.tag{display:inline-block;padding:1px 6px;border-radius:99px;font-size:.65rem;
+  font-family:'Archivo',sans-serif;font-weight:600}
+.logwrap{padding:0 22px 16px;max-height:150px;overflow-y:auto}
+.logsect{border-top:1px solid var(--edge);background:var(--panel);flex:none}
+.logsect h2{font-size:.66rem;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-dim);
+  margin:0;padding:12px 22px 8px;font-weight:600}
+.note{font-size:.73rem;color:var(--ink-dim);line-height:1.5}
+.empty{padding:14px 22px;color:var(--ink-dim);font-size:.78rem}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>Višnjan Sky Ledger</h1>
+      <p class="sub">All-sky G/R survey &middot; 45.291&deg;N 13.749&deg;E &middot; 2.45&deg;&times;1.63&deg; field, 10% overlap &middot; <a href="https://github.com/USER/visnjan-sky-ledger" style="color:var(--accent)">source</a></p>
+    </div>
+    <div class="progress-strip">
+      <div class="pstat"><div class="k">Tiles complete</div><div class="v" id="pTiles">—</div></div>
+      <div class="pstat"><div class="k">Sky covered</div><div class="v" id="pArea">—</div></div>
+      <div class="pstat"><div class="k">Clear nights left</div><div class="v" id="pNights">—</div></div>
+    </div>
+  </header>
+
+  <main>
+    <div class="mapwrap">
+      <canvas id="sky"></canvas>
+      <div class="readout" id="readout"></div>
+      <div class="viewctl">
+        <button id="bResetView">Reset view</button>
+      </div>
+      <div class="hint">drag to rotate the sky &middot; scroll to zoom</div>
+      <div class="maplegend">
+        <div class="key"><span class="chip" style="background:var(--cov-0)"></span>not observed</div>
+        <div class="key"><span class="chip" style="background:var(--cov-1)"></span>one filter</div>
+        <div class="key"><span class="chip" style="background:var(--cov-2)"></span>G and R complete</div>
+        <div class="key"><span class="chip" style="background:var(--plan)"></span>this night's plan</div>
+        <div class="key"><span class="chip" style="background:var(--moon);border-radius:50%;width:10px;height:10px"></span>moon &amp; exclusion</div>
+        <div class="key" style="margin-left:auto">Aitoff &middot; grid 2h / 30&deg;</div>
+      </div>
+    </div>
+
+    <aside>
+      <div class="sect">
+        <h2>Plan a night</h2>
+        <label class="fld"><span>Evening date (local)</span><input type="date" id="dDate"></label>
+        <div class="two">
+          <label class="fld"><span>End time</span><input type="time" id="dEnd" value="01:00"></label>
+          <label class="fld"><span>Min altitude</span><input type="number" id="dAlt" value="40" min="20" max="70" step="5"></label>
+        </div>
+        <div class="two">
+          <label class="fld"><span>Exposure (s)</span><input type="number" id="dExp" value="30" min="5" max="600" step="5"></label>
+          <label class="fld"><span>Moon keep-out</span><input type="number" id="dMoon" value="30" min="0" max="120" step="5"></label>
+        </div>
+        <label class="fld"><span>Efficiency %</span><input type="number" id="dEff" value="100" min="20" max="100" step="5"></label>
+        <div class="btnrow">
+          <button class="primary" id="bPlan">Generate plan</button>
+          <button id="bSave" disabled>Download plan JSON</button>
+          <button id="bCsv" disabled>Export CSV</button>
+        </div>
+      </div>
+
+      <div class="sect">
+        <h2>Night conditions</h2>
+        <div class="row"><span class="k">Astronomical dark</span><span class="v" id="nDark">—</span></div>
+        <div class="row"><span class="k">Usable window</span><span class="v" id="nWin">—</span></div>
+        <div class="row"><span class="k">Moon</span><span class="v" id="nMoon">—</span></div>
+        <div class="row"><span class="k">Nearest tile to moon</span><span class="v" id="nSep">—</span></div>
+        <div class="row"><span class="k">Region centre</span><span class="v" id="nCentre">—</span></div>
+        <div class="row"><span class="k">Region extent</span><span class="v" id="nSpan">—</span></div>
+        <div class="row"><span class="k">Tiles planned</span><span class="v" id="nTiles">—</span></div>
+        <div class="row"><span class="k">Median slew</span><span class="v" id="nSlew">—</span></div>
+      </div>
+
+      <div class="sect">
+        <h2>Weather</h2>
+        <div class="verdict" id="wx">
+          <div class="head"><span class="dot" style="background:var(--ink-dim)"></span><span id="wxVerdict">No forecast stored</span></div>
+          <div class="why" id="wxWhy">Forecasts are fetched by Claude and written to the ledger — the page itself cannot reach a weather service.</div>
+          <div class="hourly" id="wxBars"></div>
+          <div class="hlabels" id="wxLabels"></div>
+        </div>
+      </div>
+
+      <div class="sect">
+        <h2>Survey definition</h2>
+        <div class="row"><span class="k">Declination floor</span><span class="v" id="cDec">—</span></div>
+        <div class="row"><span class="k">Total tiles</span><span class="v" id="cTot">—</span></div>
+        <div class="row"><span class="k">Reachable floor</span><span class="v" id="cReach">—</span></div>
+        <div class="row"><span class="k">Out of reach</span><span class="v" id="cUnreach">—</span></div>
+        <p class="note" id="dbNote" style="margin-top:9px">Connecting to ledger…</p>
+      </div>
+    </aside>
+  </main>
+
+  <div class="logsect">
+    <h2>Night log</h2>
+    <div class="logwrap" id="logWrap"><div class="empty">No nights recorded yet.</div></div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------------- survey definition (must match the generator exactly) ------- */
+const SITE={lat:45.29082,lon:13.74926,tz:"Europe/Zagreb"};
+const FOV_RA=2.45, FOV_DEC=1.63, OVERLAP=0.10;
+const STEP_RA=FOV_RA*(1-OVERLAP), STEP_DEC=FOV_DEC*(1-OVERLAP);
+const DEC_MIN=-20, TILE_AREA=STEP_RA*STEP_DEC;
+
+const ROW_N=[];
+function buildGrid(){
+  const tiles=[]; let row=0;
+  for(let dec=DEC_MIN; dec<=89.5; dec+=STEP_DEC, row++){
+    const n=Math.max(1,Math.round(360*Math.cos(dec*Math.PI/180)/STEP_RA));
+    ROW_N[row]=n;
+    for(let c=0;c<n;c++) tiles.push({id:row+"_"+c,ra:c*360/n,dec:dec,row:row,col:c});
+  }
+  return tiles;
+}
+const TILES=buildGrid();
+
+const D2R=Math.PI/180, R2D=180/Math.PI;
+function angSep(ra1,d1,ra2,d2){
+  const a=d1*D2R,b=d2*D2R,dl=(ra1-ra2)*D2R;
+  return Math.acos(Math.max(-1,Math.min(1,
+    Math.sin(a)*Math.sin(b)+Math.cos(a)*Math.cos(b)*Math.cos(dl))))*R2D;
+}
+function neighborsOf(t){
+  const out=[], n=ROW_N[t.row];
+  out.push(t.row+"_"+((t.col+1)%n), t.row+"_"+((t.col-1+n)%n));
+  for(const dr of [-1,1]){
+    const r=t.row+dr, m=ROW_N[r];
+    if(m) out.push(r+"_"+(Math.round(t.ra/(360/m))%m));
+  }
+  return out;
+}
+
+/* ---------------- astronomy ------------------------------------------------- */
+function jdOf(d){ return d.getTime()/86400000 + 2440587.5; }
+function gmst(jd){
+  const T=(jd-2451545)/36525;
+  let t=280.46061837+360.98564736629*(jd-2451545)+0.000387933*T*T-T*T*T/38710000;
+  return ((t%360)+360)%360;
+}
+function sunPos(jd){
+  const n=jd-2451545, L=(280.460+0.9856474*n)*D2R, g=(357.528+0.9856003*n)*D2R;
+  const lam=L+(1.915*Math.sin(g)+0.020*Math.sin(2*g))*D2R;
+  const eps=(23.439-0.0000004*n)*D2R;
+  return {ra:((Math.atan2(Math.cos(eps)*Math.sin(lam),Math.cos(lam))*R2D)%360+360)%360,
+          dec:Math.asin(Math.sin(eps)*Math.sin(lam))*R2D, lam:lam*R2D};
+}
+function moonPos(jd){
+  const L=218.316+13.176396*(jd-2451545), M=134.963+13.064993*(jd-2451545), F=93.272+13.229350*(jd-2451545);
+  const lam=(L+6.289*Math.sin(M*D2R))*D2R, bet=5.128*Math.sin(F*D2R)*D2R, eps=23.439*D2R;
+  const x=Math.cos(bet)*Math.cos(lam);
+  const y=Math.cos(eps)*Math.cos(bet)*Math.sin(lam)-Math.sin(eps)*Math.sin(bet);
+  const z=Math.sin(eps)*Math.cos(bet)*Math.sin(lam)+Math.cos(eps)*Math.sin(bet);
+  return {ra:((Math.atan2(y,x)*R2D)%360+360)%360, dec:Math.asin(z)*R2D, lam:lam*R2D};
+}
+function moonIllum(jd){
+  const s=sunPos(jd), m=moonPos(jd);
+  const el=Math.acos(Math.max(-1,Math.min(1,Math.cos((m.lam-s.lam)*D2R))));
+  return (1-Math.cos(el))/2;
+}
+function altOf(ra,dec,jd){
+  const H=(gmst(jd)+SITE.lon-ra)*D2R, d=dec*D2R, la=SITE.lat*D2R;
+  return Math.asin(Math.sin(d)*Math.sin(la)+Math.cos(d)*Math.cos(la)*Math.cos(H))*R2D;
+}
+function tzOffset(date){
+  const f=new Intl.DateTimeFormat("en-US",{timeZone:SITE.tz,hour12:false,year:"numeric",
+    month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  const p={}; for(const q of f.formatToParts(date)) p[q.type]=q.value;
+  const h=p.hour==="24"?"00":p.hour;
+  return (Date.UTC(+p.year,+p.month-1,+p.day,+h,+p.minute,+p.second)-date.getTime())/60000;
+}
+function localToUTC(dateStr,hhmm,dayShift){
+  const [Y,M,D]=dateStr.split("-").map(Number), [h,m]=hhmm.split(":").map(Number);
+  let g=new Date(Date.UTC(Y,M-1,D+(dayShift||0),h,m,0));
+  for(let i=0;i<2;i++) g=new Date(Date.UTC(Y,M-1,D+(dayShift||0),h,m,0)-tzOffset(g)*60000);
+  return g;
+}
+function fmtLocal(d){
+  return new Intl.DateTimeFormat("en-GB",{timeZone:SITE.tz,hour:"2-digit",minute:"2-digit"}).format(d);
+}
+function solarCross(dateStr,target){
+  const start=localToUTC(dateStr,"15:00",0);
+  let prev=null;
+  for(let i=0;i<=17*60;i++){
+    const t=new Date(start.getTime()+i*60000), j=jdOf(t), s=sunPos(j), a=altOf(s.ra,s.dec,j);
+    if(prev!==null && prev>=target && a<target) return t;
+    prev=a;
+  }
+  return null;
+}
+function raHM(x){ const h=Math.floor(x/15); return h+"h"+String(Math.round((x/15-h)*60)).padStart(2,"0")+"m"; }
+
+/* ---------------- ledger state ---------------------------------------------- */
+let DB=null, NIGHTS=[], WEATHER={}, CURRENT=null;
+function coverageMap(){
+  const m=new Map();
+  for(const n of NIGHTS){
+    if(n.status!=="observed") continue;
+    for(const rec of (n.observed||[])){
+      const id=typeof rec==="string"?rec:rec.id;
+      const f=typeof rec==="string"?2:(rec.filters?rec.filters.length:2);
+      m.set(id,Math.min(2,(m.get(id)||0)+f));
+    }
+  }
+  return m;
+}
+
+/* ---------------- night planning -------------------------------------------- */
+function planNight(dateStr,endHHMM,minAlt,expSec,effPct,moonKeep){
+  const dusk=solarCross(dateStr,-18);
+  if(!dusk) return {error:"No astronomical darkness on this date."};
+  const end=localToUTC(dateStr,endHHMM,1);
+  const windowMin=(end-dusk)/60000;
+  if(windowMin<=0) return {error:"End time falls before astronomical dark."};
+
+  const perTile=2*expSec/(effPct/100);
+  const capacity=Math.max(0,Math.floor(windowMin*60/perTile));
+  const covered=coverageMap();
+  const jdMid=jdOf(new Date(dusk.getTime()+(end-dusk)/2));
+  const mp=moonPos(jdMid), mAlt=altOf(mp.ra,mp.dec,jdMid), mIll=moonIllum(jdMid);
+  const moonUp=mAlt>-2;
+
+  /* eligible = unobserved, high enough, and clear of the moon */
+  const elig=[];
+  let blockedByMoon=0;
+  for(const t of TILES){
+    if((covered.get(t.id)||0)>=2) continue;
+    const a=altOf(t.ra,t.dec,jdMid);
+    if(a<minAlt) continue;
+    const sep=angSep(t.ra,t.dec,mp.ra,mp.dec);
+    if(moonUp && moonKeep>0 && sep<moonKeep){ blockedByMoon++; continue; }
+    elig.push({t:t,alt:a,sep:sep});
+  }
+  if(!elig.length) return {error:"Nothing eligible: everything is observed, too low, or inside the moon keep-out."};
+
+  /* seed the region where the sky is highest, preferring to grow existing coverage */
+  let seed=elig[0], best=-1e9;
+  for(const e of elig){
+    let adj=0;
+    for(const nid of neighborsOf(e.t)) if((covered.get(nid)||0)>0) adj++;
+    const score=e.alt+adj*12;
+    if(score>best){ best=score; seed=e; }
+  }
+  /* grow outward from the seed so the night lands as one compact block */
+  for(const e of elig) e.d=angSep(e.t.ra,e.t.dec,seed.t.ra,seed.t.dec);
+  elig.sort((a,b)=>a.d-b.d);
+  const chosen=elig.slice(0,capacity);
+
+  /* serpentine by declination row to keep slews short */
+  const rel=ra=>{ let d=((ra-seed.t.ra)%360+360)%360; return d>180?d-360:d; };
+  const rows=new Map();
+  for(const e of chosen){ if(!rows.has(e.t.row)) rows.set(e.t.row,[]); rows.get(e.t.row).push(e.t); }
+  const keys=Array.from(rows.keys()).sort((a,b)=>a-b);
+  const tiles=[];
+  keys.forEach((r,i)=>{
+    const arr=rows.get(r).sort((a,b)=>rel(a.ra)-rel(b.ra));
+    if(i%2) arr.reverse();
+    tiles.push.apply(tiles,arr);
+  });
+
+  const slews=[];
+  for(let i=1;i<tiles.length;i++) slews.push(angSep(tiles[i-1].ra,tiles[i-1].dec,tiles[i].ra,tiles[i].dec));
+  slews.sort((a,b)=>a-b);
+  const medSlew=slews.length?slews[Math.floor(slews.length/2)]:0;
+
+  const decs=tiles.map(t=>t.dec), rels=tiles.map(t=>rel(t.ra));
+  const minSep=tiles.length?Math.min.apply(null,tiles.map(t=>angSep(t.ra,t.dec,mp.ra,mp.dec))):null;
+
+  return {dusk:dusk,end:end,windowMin:windowMin,capacity:capacity,tiles:tiles,
+    jdMid:jdMid,candidates:elig.length,blockedByMoon:blockedByMoon,
+    moon:{ra:mp.ra,dec:mp.dec,alt:mAlt,illum:mIll,up:moonUp,keep:moonKeep,minSep:minSep},
+    centre:{ra:seed.t.ra,dec:seed.t.dec},
+    span:{dec:[Math.min.apply(null,decs),Math.max.apply(null,decs)],
+          ra:[Math.min.apply(null,rels),Math.max.apply(null,rels)]},
+    medSlew:medSlew};
+}
+
+/* ---------------- projection (draggable) ------------------------------------ */
+const cv=document.getElementById("sky"), ctx=cv.getContext("2d");
+let W=0,H=0,SC=1,CX=0,CY=0;
+let viewRA=180, viewDec=20, zoom=1;
+
+function rotate(ra,dec){
+  const l=(ra-viewRA)*D2R, p=dec*D2R, d0=viewDec*D2R;
+  const x=Math.cos(p)*Math.cos(l), y=Math.cos(p)*Math.sin(l), z=Math.sin(p);
+  const x2=x*Math.cos(d0)+z*Math.sin(d0);
+  const z2=-x*Math.sin(d0)+z*Math.cos(d0);
+  return {lon:Math.atan2(y,x2)*R2D, lat:Math.asin(Math.max(-1,Math.min(1,z2)))*R2D};
+}
+function aitoffLL(lonDeg,latDeg){
+  let lam=((lonDeg+180)%360+360)%360-180;
+  const l=-lam*D2R, p=latDeg*D2R;   /* negate so RA increases leftward */
+  const al=Math.acos(Math.max(-1,Math.min(1,Math.cos(p)*Math.cos(l/2))));
+  const sinc=Math.abs(al)<1e-9?1:Math.sin(al)/al;
+  return {x:2*Math.cos(p)*Math.sin(l/2)/sinc, y:Math.sin(p)/sinc};
+}
+function toScreen(ra,dec){
+  const r=rotate(ra,dec), a=aitoffLL(r.lon,r.lat);
+  return {x:CX+a.x*SC*zoom, y:CY-a.y*SC*zoom};
+}
+function css(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+function resize(){
+  const r=cv.parentElement.getBoundingClientRect();
+  const dpr=Math.min(devicePixelRatio||1,2);
+  W=Math.max(320,Math.floor(r.width)); H=Math.max(280,Math.floor(r.height-44));
+  cv.width=W*dpr; cv.height=H*dpr; cv.style.width=W+"px"; cv.style.height=H+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  CX=W/2; CY=H/2; SC=Math.min(W/(4*Math.SQRT2+0.5), H/(2*Math.SQRT2+0.5));
+  draw();
+}
+function seamOK(pts){
+  const xs=pts.map(p=>p.x);
+  return Math.max.apply(null,xs)-Math.min.apply(null,xs) < SC*zoom*1.1;
+}
+function strokePath(points,style,width,dash){
+  ctx.save(); ctx.strokeStyle=style; ctx.lineWidth=width;
+  ctx.setLineDash(dash||[]);
+  ctx.beginPath();
+  let open=false;
+  for(let i=0;i<points.length;i++){
+    const p=points[i];
+    if(i>0 && Math.abs(p.x-points[i-1].x)>SC*zoom*0.9){ open=false; }
+    if(!open){ ctx.moveTo(p.x,p.y); open=true; } else ctx.lineTo(p.x,p.y);
+  }
+  ctx.stroke(); ctx.restore();
+}
+
+function draw(){
+  const C={g0:css("--cov-0"),g1:css("--cov-1"),g2:css("--cov-2"),plan:css("--plan"),
+    grid:css("--grid"),dim:css("--ink-dim"),sky:css("--sky"),edge:css("--edge"),moon:css("--moon")};
+  ctx.clearRect(0,0,W,H);
+
+  /* projection boundary (fixed shape, independent of rotation) */
+  ctx.beginPath();
+  for(let i=0;i<=180;i++){ const a=aitoffLL(179.999,-90+i);
+    const x=CX+a.x*SC*zoom, y=CY-a.y*SC*zoom; i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+  for(let i=0;i<=180;i++){ const a=aitoffLL(-179.999,90-i);
+    ctx.lineTo(CX+a.x*SC*zoom, CY-a.y*SC*zoom); }
+  ctx.closePath(); ctx.fillStyle=C.sky; ctx.fill();
+  ctx.strokeStyle=C.edge; ctx.lineWidth=1; ctx.stroke();
+  ctx.save(); ctx.clip();
+
+  const cov=coverageMap();
+  const planSet=CURRENT?new Set(CURRENT.tiles.map(t=>t.id)):null;
+
+  for(const t of TILES){
+    const half=STEP_RA/2/Math.max(0.03,Math.cos(t.dec*D2R)), hd=STEP_DEC/2;
+    const pts=[toScreen(t.ra-half,t.dec-hd),toScreen(t.ra+half,t.dec-hd),
+               toScreen(t.ra+half,t.dec+hd),toScreen(t.ra-half,t.dec+hd)];
+    if(!seamOK(pts)) continue;
+    const c=cov.get(t.id)||0;
+    ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+    for(let i=1;i<4;i++) ctx.lineTo(pts[i].x,pts[i].y);
+    ctx.closePath();
+    ctx.fillStyle=(planSet&&planSet.has(t.id))?C.plan:(c>=2?C.g2:c===1?C.g1:C.g0);
+    ctx.fill();
+  }
+
+  for(let d=-60;d<=60;d+=30){
+    const pts=[]; for(let i=0;i<=360;i+=2) pts.push(toScreen(i,d));
+    strokePath(pts,C.grid,0.8);
+  }
+  for(let ra=0;ra<360;ra+=30){
+    const pts=[]; for(let i=-88;i<=88;i+=2) pts.push(toScreen(ra,i));
+    strokePath(pts,C.grid,0.8);
+  }
+  const floor=[]; for(let i=0;i<=360;i+=2) floor.push(toScreen(i,DEC_MIN));
+  strokePath(floor,C.dim,1.1,[4,3]);
+
+  /* moon and its keep-out circle */
+  if(CURRENT&&CURRENT.moon){
+    const m=CURRENT.moon;
+    if(m.keep>0){
+      const ring=[];
+      for(let a=0;a<=360;a+=4){
+        const br=(90-m.keep)*D2R, ar=a*D2R, dr=m.dec*D2R, rr=m.ra*D2R;
+        const sd=Math.sin(dr)*Math.sin(br)+Math.cos(dr)*Math.cos(br)*Math.cos(ar);
+        const dd=Math.asin(Math.max(-1,Math.min(1,sd)));
+        const dra=Math.atan2(Math.sin(ar)*Math.cos(br)*Math.cos(dr),
+                             Math.sin(br)-Math.sin(dr)*Math.sin(dd));
+        ring.push(toScreen((rr-dra)*R2D,dd*R2D));
+      }
+      strokePath(ring,C.moon,1.2,[3,3]);
+    }
+    const mp=toScreen(m.ra,m.dec);
+    ctx.beginPath(); ctx.arc(mp.x,mp.y,5,0,2*Math.PI);
+    ctx.fillStyle=C.moon; ctx.globalAlpha=m.up?1:0.4; ctx.fill(); ctx.globalAlpha=1;
+  }
+  ctx.restore();
+
+  ctx.font="10px 'IBM Plex Mono', monospace"; ctx.fillStyle=C.dim;
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+  for(let h=0;h<24;h+=4){
+    const p=toScreen(h*15,0);
+    if(p.x>10&&p.x<W-10&&p.y>10&&p.y<H-10) ctx.fillText(h+"h",p.x,p.y-5);
+  }
+}
+
+/* drag to rotate, scroll to zoom */
+let dragging=false,lx=0,ly=0,moved=false;
+cv.addEventListener("pointerdown",e=>{ cv.setPointerCapture(e.pointerId);
+  dragging=true; moved=false; lx=e.clientX; ly=e.clientY; cv.classList.add("drag"); });
+cv.addEventListener("pointerup",()=>{ dragging=false; cv.classList.remove("drag"); });
+cv.addEventListener("pointercancel",()=>{ dragging=false; cv.classList.remove("drag"); });
+cv.addEventListener("wheel",e=>{ e.preventDefault();
+  zoom=Math.max(0.7,Math.min(6,zoom*(1-e.deltaY*0.0012))); draw(); },{passive:false});
+document.getElementById("bResetView").addEventListener("click",()=>{
+  viewRA=180; viewDec=20; zoom=1; draw(); });
+
+const ro=document.getElementById("readout");
+cv.addEventListener("pointermove",e=>{
+  if(dragging){
+    const dx=e.clientX-lx, dy=e.clientY-ly;
+    if(Math.abs(dx)+Math.abs(dy)>1) moved=true;
+    viewRA=((viewRA+dx*0.25/zoom)%360+360)%360;
+    viewDec=Math.max(-85,Math.min(85,viewDec+dy*0.25/zoom));
+    lx=e.clientX; ly=e.clientY; ro.classList.remove("on"); draw(); return;
+  }
+  const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  let best=null,bd=1e9;
+  for(const t of TILES){
+    const p=toScreen(t.ra,t.dec), d=(p.x-mx)*(p.x-mx)+(p.y-my)*(p.y-my);
+    if(d<bd){ bd=d; best=t; }
+  }
+  if(best&&bd<400){
+    const c=coverageMap().get(best.id)||0;
+    let extra="";
+    if(CURRENT&&CURRENT.moon) extra="<br>moon sep "+angSep(best.ra,best.dec,CURRENT.moon.ra,CURRENT.moon.dec).toFixed(0)+"°";
+    ro.innerHTML="tile "+best.id+"<br>RA "+raHM(best.ra)+" &nbsp;Dec "+
+      (best.dec>=0?"+":"")+best.dec.toFixed(2)+"°<br>"+
+      (c>=2?"G + R complete":c===1?"one filter done":"not observed")+extra;
+    ro.classList.add("on");
+  } else ro.classList.remove("on");
+});
+cv.addEventListener("pointerleave",()=>ro.classList.remove("on"));
+
+/* ---------------- panels ---------------------------------------------------- */
+const el=id=>document.getElementById(id);
+function renderProgress(){
+  const cov=coverageMap();
+  let done=0; cov.forEach(v=>{ if(v>=2) done++; });
+  el("pTiles").textContent=done.toLocaleString()+" / "+TILES.length.toLocaleString();
+  el("pArea").textContent=(done*TILE_AREA).toFixed(0)+" deg²";
+  const minAlt=+(el("dAlt").value||40);
+  const reachFloor=SITE.lat-(90-minAlt);
+  const reachable=TILES.filter(t=>t.dec>=reachFloor).length;
+  el("cDec").textContent=(DEC_MIN>0?"+":"")+DEC_MIN+"°";
+  el("cTot").textContent=TILES.length.toLocaleString();
+  el("cReach").textContent="Dec ≥ "+(reachFloor>=0?"+":"")+reachFloor.toFixed(1)+"°";
+  el("cUnreach").textContent=(TILES.length-reachable).toLocaleString()+" tiles";
+  const per=CURRENT?CURRENT.tiles.length:230;
+  el("pNights").textContent=per>0?Math.ceil(Math.max(0,reachable-done)/per):"—";
+}
+function renderNight(p){
+  const ids=["nDark","nWin","nMoon","nSep","nCentre","nSpan","nTiles","nSlew"];
+  if(!p||p.error){ ids.forEach(i=>el(i).textContent="—"); return; }
+  el("nDark").textContent=fmtLocal(p.dusk);
+  el("nWin").textContent=fmtLocal(p.dusk)+" → "+fmtLocal(p.end)+" ("+Math.round(p.windowMin)+"m)";
+  el("nMoon").textContent=(p.moon.illum*100).toFixed(0)+"% "+
+    (p.moon.up?"up "+p.moon.alt.toFixed(0)+"°":"down");
+  el("nSep").textContent=p.moon.minSep!=null?p.moon.minSep.toFixed(0)+"°"+
+    (p.blockedByMoon?" ("+p.blockedByMoon+" excluded)":""):"—";
+  el("nCentre").textContent=raHM(p.centre.ra)+" "+(p.centre.dec>=0?"+":"")+p.centre.dec.toFixed(1)+"°";
+  el("nSpan").textContent=(p.span.ra[1]-p.span.ra[0]).toFixed(1)+"° × "+
+    (p.span.dec[1]-p.span.dec[0]).toFixed(1)+"°";
+  el("nTiles").textContent=p.tiles.length+" of "+p.candidates+" eligible";
+  el("nSlew").textContent=p.medSlew.toFixed(2)+"°";
+}
+function renderWeather(dateStr){
+  const w=WEATHER[dateStr];
+  const dot=document.querySelector("#wx .dot");
+  const bars=el("wxBars"), labs=el("wxLabels");
+  bars.innerHTML=""; labs.innerHTML="";
+  if(!w){ dot.style.background=css("--ink-dim"); el("wxVerdict").textContent="No forecast stored";
+    el("wxWhy").textContent="Ask Claude to fetch the forecast for this date and write it to the ledger.";
+    return; }
+  const cl=w.hours.map(h=>h.cloud), rh=w.hours.map(h=>h.rh);
+  const mx=Math.max.apply(null,cl), md=rh.slice().sort((a,b)=>a-b)[Math.floor(rh.length/2)];
+  let st,txt;
+  if(mx<=25&&md<90){ st="ok"; txt="Clear — go"; }
+  else if(mx<=60){ st="warn"; txt="Broken cloud — marginal"; }
+  else { st="bad"; txt="Overcast — no go"; }
+  dot.style.background=css("--"+st);
+  el("wxVerdict").textContent=txt;
+  el("wxWhy").textContent="Peak cloud "+mx+"%, median humidity "+md+"% across the dark window. Fetched "+w.fetched+".";
+  w.hours.forEach(h=>{
+    const b=document.createElement("div"); b.className="hbar";
+    b.style.height=Math.max(3,h.cloud/100*26)+"px";
+    b.style.background=h.cloud<=25?css("--ok"):h.cloud<=60?css("--warn"):css("--bad");
+    b.title=h.t+" — "+h.cloud+"% cloud, "+h.rh+"% RH";
+    bars.appendChild(b);
+  });
+  if(w.hours.length) labs.innerHTML="<span>"+w.hours[0].t+"</span><span>"+w.hours[w.hours.length-1].t+"</span>";
+}
+function renderLog(){
+  const wrap=el("logWrap");
+  if(!NIGHTS.length){ wrap.innerHTML='<div class="empty">No nights recorded yet. Generate a plan and save it to start the ledger.</div>'; return; }
+  const rows=NIGHTS.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(n=>{
+    const col=n.status==="observed"?"--ok":n.status==="planned"?"--accent":"--ink-dim";
+    return "<tr><td>"+n.date+"</td><td><span class='tag' style='background:var(--accent-soft);color:var("+col+
+      ")'>"+n.status+"</span></td><td>"+((n.planned||[]).length)+"</td><td>"+((n.observed||[]).length)+
+      "</td><td>"+(n.note?String(n.note).slice(0,60):"")+"</td></tr>";
+  }).join("");
+  wrap.innerHTML="<table><thead><tr><th>Night</th><th>Status</th><th>Planned</th><th>Observed</th><th>Note</th></tr></thead><tbody>"+rows+"</tbody></table>";
+}
+
+/* ---------------- controls -------------------------------------------------- */
+function todayLocal(){
+  return new Intl.DateTimeFormat("en-CA",{timeZone:SITE.tz,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+}
+el("dDate").value=todayLocal();
+
+function doPlan(){
+  const p=planNight(el("dDate").value,el("dEnd").value,+el("dAlt").value,
+                    +el("dExp").value,+el("dEff").value,+el("dMoon").value);
+  if(p.error){ alert(p.error); return; }
+  CURRENT=p;
+  /* centre the view on the planned region */
+  viewRA=p.centre.ra; viewDec=Math.max(-85,Math.min(85,p.centre.dec));
+  renderNight(p); renderProgress(); renderWeather(el("dDate").value); draw();
+  el("bSave").disabled=false; el("bCsv").disabled=false;
+}
+el("bPlan").addEventListener("click",doPlan);
+el("dAlt").addEventListener("change",renderProgress);
+el("dDate").addEventListener("change",()=>{ CURRENT=null;
+  el("bSave").disabled=true; el("bCsv").disabled=true;
+  renderNight(null); renderWeather(el("dDate").value); draw(); });
+
+el("bCsv").addEventListener("click",()=>{
+  if(!CURRENT) return;
+  const lines=["tile_id,ra_deg,dec_deg,ra_hms,dec_dms,moon_sep_deg,order"];
+  CURRENT.tiles.forEach((t,i)=>{
+    const h=Math.floor(t.ra/15), mm=(t.ra/15-h)*60, m=Math.floor(mm), s=((mm-m)*60).toFixed(1);
+    const sg=t.dec<0?"-":"+", ad=Math.abs(t.dec), dd=Math.floor(ad),
+          dm=Math.floor((ad-dd)*60), ds=(((ad-dd)*60-dm)*60).toFixed(1);
+    lines.push([t.id,t.ra.toFixed(5),t.dec.toFixed(5),
+      h+"h "+String(m).padStart(2,"0")+"m "+s+"s",
+      sg+String(dd).padStart(2,"0")+"° "+String(dm).padStart(2,"0")+"' "+ds+'"',
+      angSep(t.ra,t.dec,CURRENT.moon.ra,CURRENT.moon.dec).toFixed(1), i+1].join(","));
+  });
+  const csv=lines.join("\n");
+  saveText("plan_"+el("dDate").value+".csv", csv, "text/csv");
+});
+
+el("bSave").addEventListener("click",()=>{
+  if(!CURRENT) return;
+  const date=el("dDate").value;
+  const doc={date:date,status:"planned",
+    planned:CURRENT.tiles.map(t=>t.id), observed:[],
+    window:{dark:CURRENT.dusk.toISOString(),end:CURRENT.end.toISOString(),
+            minutes:Math.round(CURRENT.windowMin)},
+    params:{expSec:+el("dExp").value,minAlt:+el("dAlt").value,
+            efficiency:+el("dEff").value,moonKeepOut:+el("dMoon").value},
+    moon:{illum:+CURRENT.moon.illum.toFixed(3),alt:+CURRENT.moon.alt.toFixed(1),
+          minSep:CURRENT.moon.minSep!=null?+CURRENT.moon.minSep.toFixed(1):null},
+    region:{centreRa:+CURRENT.centre.ra.toFixed(4),centreDec:+CURRENT.centre.dec.toFixed(4),
+            medianSlewDeg:+CURRENT.medSlew.toFixed(3)},
+    savedAt:new Date().toISOString()};
+  saveText("night_"+date+".json", JSON.stringify(doc,null,2), "application/json");
+});
+
+function saveText(name, text, mime){
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([text],{type:mime||"text/plain"}));
+  a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},0);
+}
+
+/* ---------------- boot ------------------------------------------------------ */
+renderProgress(); renderLog(); resize();
+window.addEventListener("resize",resize);
+if(window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener("change",draw);
+
+(async function(){
+  const note=el("dbNote");
+  async function grab(path){
+    try{ const r=await fetch(path,{cache:"no-store"}); if(!r.ok) return null; return await r.json(); }
+    catch(e){ return null; }
+  }
+  const cov=await grab("data/coverage.json");
+  const wx =await grab("data/weather.json");
+  if(cov&&Array.isArray(cov.nights)) NIGHTS=cov.nights;
+  if(wx) WEATHER=wx;
+  const n=NIGHTS.filter(x=>x.status==="observed").length;
+  note.textContent=cov?("Coverage loaded from data/coverage.json — "+n+" observed night"+(n===1?"":"s")+
+      ". Update it by committing a new file to the repository."):
+      "No data/coverage.json found — showing an empty survey.";
+  renderProgress(); renderLog(); renderWeather(el("dDate").value); draw();
+})();
+
+})();
+</script>
+</body>
+</html>

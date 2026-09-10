@@ -1,16 +1,45 @@
 {
-  "survey": "Visnjan all-sky G/R",
-  "site": {
-    "lat": 45.29082,
-    "lon": 13.74926,
-    "tz": "Europe/Zagreb"
+  "survey": "Sky Ledger \u2014 two-site photometric survey",
+  "telescopes": {
+    "visnjan": {
+      "label": "Vi\u0161njan \u2014 Ti\u010dan",
+      "lat": 45.29082,
+      "lon": 13.74926,
+      "fov_ra": 2.45,
+      "fov_dec": 1.63,
+      "filters": [
+        "G",
+        "R"
+      ],
+      "tiles": 8631
+    },
+    "gochile-got1": {
+      "label": "GoChile GoT1 \u2014 El Sauce",
+      "lat": -30.4725,
+      "lon": -70.7631,
+      "fov_ra": 0.793,
+      "fov_dec": 0.529,
+      "filters": [
+        "g",
+        "r"
+      ],
+      "tiles": 81686
+    },
+    "gochile-got2": {
+      "label": "GoChile GoT2 \u2014 El Sauce",
+      "lat": -30.4725,
+      "lon": -70.7631,
+      "fov_ra": 3.338,
+      "fov_dec": 2.231,
+      "filters": [
+        "L"
+      ],
+      "tiles": 4557,
+      "photometric": false
+    }
   },
   "grid": {
-    "fov_ra": 2.45,
-    "fov_dec": 1.63,
-    "overlap": 0.1,
-    "dec_min": -20,
-    "tiles": 8631
+    "overlap": 0.1
   },
   "nights": []
 }

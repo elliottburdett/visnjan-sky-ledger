@@ -13,14 +13,23 @@ import numpy as np
 from astropy.time import Time
 from astropy.coordinates import EarthLocation, AltAz, SkyCoord, get_sun, get_body
 import astropy.units as u
-from grid import build_grid, ang_sep, SITE, STEP_DEC
+from grid import build_grid, ang_sep, steps, tile_area, TELESCOPES, DEFAULT
 
 ROOT = Path(__file__).resolve().parent.parent
-LOC = EarthLocation(lat=SITE["lat"]*u.deg, lon=SITE["lon"]*u.deg, height=SITE["height_m"]*u.m)
-TZ = 2  # Europe/Zagreb summer offset; adjust for winter dates
 
 
-def dark_start(date):
+def tz_offset_hours(tz_name, when):
+    """UTC offset in hours for a zone at a given instant (handles DST)."""
+    try:
+        from zoneinfo import ZoneInfo
+        import datetime as _dt
+        d = _dt.datetime.fromisoformat(when + "T22:00:00").replace(tzinfo=ZoneInfo(tz_name))
+        return d.utcoffset().total_seconds() / 3600
+    except Exception:
+        return 0.0
+
+
+def dark_start(date, LOC):
     t0 = Time(f"{date}T13:00:00")
     ts = t0 + np.arange(0, 17*60, 1)*u.min
     alt = get_sun(ts).transform_to(AltAz(obstime=ts, location=LOC)).alt.deg
@@ -30,13 +39,15 @@ def dark_start(date):
     return None
 
 
-def covered_map():
+def covered_map(scope):
     p = ROOT/"data"/"coverage.json"
     if not p.exists():
         return {}
     m = {}
     for n in json.loads(p.read_text()).get("nights", []):
         if n.get("status") != "observed":
+            continue
+        if n.get("telescope", DEFAULT) != scope:
             continue
         for rec in n.get("observed", []):
             i = rec["id"] if isinstance(rec, dict) else rec
@@ -48,18 +59,26 @@ def covered_map():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("date")
-    ap.add_argument("--end", default="01:00")
-    ap.add_argument("--min-alt", type=float, default=40)
+    ap.add_argument("--telescope", default=DEFAULT, choices=sorted(TELESCOPES))
+    ap.add_argument("--end", default=None)
+    ap.add_argument("--min-alt", type=float, default=None)
     ap.add_argument("--moon-keepout", type=float, default=30)
     ap.add_argument("--exp", type=float, default=30)
     ap.add_argument("--efficiency", type=float, default=100)
     a = ap.parse_args()
 
-    dusk = dark_start(a.date)
+    spec = TELESCOPES[a.telescope]
+    site = spec["site"]
+    LOC = EarthLocation(lat=site["lat"]*u.deg, lon=site["lon"]*u.deg, height=site["height_m"]*u.m)
+    TZ = tz_offset_hours(site["tz"], a.date)
+    end_s = a.end or ("01:00" if a.telescope == DEFAULT else "03:00")
+    min_alt = spec["min_alt"] if a.min_alt is None else a.min_alt
+    STEP_RA_S, STEP_DEC_S = steps(a.telescope)
+
+    dusk = dark_start(a.date, LOC)
     if dusk is None:
         raise SystemExit("no astronomical darkness on this date")
-    hh, mm = map(int, a.end.split(":"))
-    y, mo, d = map(int, a.date.split("-"))
+    hh, mm = map(int, end_s.split(":"))
     end = Time(f"{a.date}T00:00:00") + (1*u.day) + (hh - TZ)*u.hour + mm*u.min
     window_min = (end - dusk).sec / 60
     if window_min <= 0:
@@ -67,9 +86,9 @@ def main():
 
     capacity = int(window_min * 60 / (2 * a.exp / (a.efficiency / 100)))
     mid = dusk + (end - dusk) / 2
-    cov = covered_map()
+    cov = covered_map(a.telescope)
 
-    tiles = build_grid()
+    tiles = build_grid(a.telescope)
     ra = np.array([t["ra"] for t in tiles]); dec = np.array([t["dec"] for t in tiles])
     alt = SkyCoord(ra=ra*u.deg, dec=dec*u.deg).transform_to(AltAz(obstime=mid, location=LOC)).alt.deg
     moon = get_body("moon", mid)
@@ -78,7 +97,7 @@ def main():
     sun = get_sun(mid)
     illum = (1 - np.cos(np.radians(sun.separation(moon).deg))) / 2
 
-    ok = np.array([cov.get(t["id"], 0) < 2 for t in tiles]) & (alt >= a.min_alt)
+    ok = np.array([cov.get(t["id"], 0) < 2 for t in tiles]) & (alt >= min_alt)
     if m_alt > -2 and a.moon_keepout > 0:
         ok &= sep >= a.moon_keepout
     idx = np.where(ok)[0]
@@ -99,22 +118,24 @@ def main():
         arr = sorted(rows[r], key=lambda p: p[0], reverse=bool(j % 2))
         order += [i for _, i in arr]
 
-    out = {"date": a.date, "status": "planned",
+    out = {"date": a.date, "telescope": a.telescope, "status": "planned",
            "planned": [tiles[i]["id"] for i in order], "observed": [],
            "window": {"dark": dusk.isot + "Z", "end": end.isot + "Z", "minutes": round(window_min)},
-           "params": {"expSec": a.exp, "minAlt": a.min_alt,
+           "params": {"expSec": a.exp, "minAlt": min_alt,
                       "efficiency": a.efficiency, "moonKeepOut": a.moon_keepout},
            "moon": {"illum": round(float(illum), 3), "alt": round(float(m_alt), 1),
                     "minSep": round(float(sep[order].min()), 1)},
            "region": {"centreRa": round(float(ra[seed]), 4), "centreDec": round(float(dec[seed]), 4)}}
 
-    p = ROOT/"data"/"nights"/f"night_{a.date}.json"
+    p = ROOT/"data"/"nights"/f"night_{a.date}_{a.telescope}.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(out, indent=2))
-    print(f"{a.date}: dark {(dusk + TZ*u.hour).iso[11:16]} -> {a.end}, {round(window_min)} min")
+    print(f"{a.date} [{a.telescope}]: dark {(dusk + TZ*u.hour).iso[11:16]} -> {end_s}, "
+          f"{round(window_min)} min")
     print(f"  {len(order)} tiles, moon {illum*100:.0f}% {'up' if m_alt > 0 else 'down'}, "
           f"nearest {sep[order].min():.0f}deg")
-    print(f"  dec {dec[order].min():+.1f}..{dec[order].max():+.1f}, wrote {p}")
+    print(f"  dec {dec[order].min():+.1f}..{dec[order].max():+.1f}, "
+          f"{len(order)*tile_area(a.telescope):.0f} deg^2, wrote {p}")
 
 
 if __name__ == "__main__":

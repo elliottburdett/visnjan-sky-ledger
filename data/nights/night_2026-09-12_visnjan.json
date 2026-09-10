@@ -1,5 +1,6 @@
 {
   "date": "2026-09-12",
+  "telescope": "visnjan",
   "status": "planned",
   "planned": [
     "35_122",
@@ -247,7 +248,7 @@
   },
   "params": {
     "expSec": 30,
-    "minAlt": 40,
+    "minAlt": 40.0,
     "efficiency": 100,
     "moonKeepOut": 30
   },

@@ -81,7 +81,7 @@ aside{border-left:1px solid var(--edge);background:var(--panel);padding:16px;
 .row .k{color:var(--ink-dim);font-size:.79rem}
 .row .v{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-size:.83rem;text-align:right}
 
-input[type=date],input[type=time],input[type=number]{
+input[type=date],input[type=time],input[type=number],select{
   font-family:'IBM Plex Mono',monospace;font-size:.82rem;background:var(--panel-2);
   color:var(--ink);border:1px solid var(--edge);border-radius:6px;padding:6px 8px;width:100%}
 label.fld{display:block;margin-bottom:8px}
@@ -125,7 +125,7 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
   <header>
     <div>
       <h1>Višnjan Sky Ledger</h1>
-      <p class="sub">All-sky G/R survey &middot; 45.291&deg;N 13.749&deg;E &middot; 2.45&deg;&times;1.63&deg; field, 10% overlap &middot; <a href="https://github.com/elliottburdett/visnjan-sky-ledger" style="color:var(--accent)">source</a></p>
+      <p class="sub" id="subline">two-site photometric survey</p>
     </div>
     <div class="progress-strip">
       <div class="pstat"><div class="k">Tiles complete</div><div class="v" id="pTiles">—</div></div>
@@ -155,6 +155,11 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
     <aside>
       <div class="sect">
         <h2>Plan a night</h2>
+        <label class="fld"><span>Telescope</span><select id="dScope">
+          <option value="visnjan">Višnjan — Tičan (2.45°×1.63°, G/R)</option>
+          <option value="gochile-got1">GoChile GoT1 — El Sauce (0.79°×0.53°, Sloan g/r)</option>
+          <option value="gochile-got2">GoChile GoT2 — El Sauce (3.34°×2.23°, L only)</option>
+        </select></label>
         <label class="fld"><span>Evening date (local)</span><input type="date" id="dDate"></label>
         <div class="two">
           <label class="fld"><span>End time</span><input type="time" id="dEnd" value="01:00"></label>
@@ -196,7 +201,9 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
 
       <div class="sect">
         <h2>Survey definition</h2>
-        <div class="row"><span class="k">Declination floor</span><span class="v" id="cDec">—</span></div>
+        <div class="row"><span class="k">Optics</span><span class="v" id="cOptics">—</span></div>
+        <div class="row"><span class="k">Field of view</span><span class="v" id="cFov">—</span></div>
+        <div class="row"><span class="k">Declination range</span><span class="v" id="cDec">—</span></div>
         <div class="row"><span class="k">Total tiles</span><span class="v" id="cTot">—</span></div>
         <div class="row"><span class="k">Reachable floor</span><span class="v" id="cReach">—</span></div>
         <div class="row"><span class="k">Out of reach</span><span class="v" id="cUnreach">—</span></div>
@@ -216,22 +223,54 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
 "use strict";
 
 /* ---------------- survey definition (must match the generator exactly) ------- */
-const SITE={lat:45.29082,lon:13.74926,tz:"Europe/Zagreb"};
-const FOV_RA=2.45, FOV_DEC=1.63, OVERLAP=0.10;
-const STEP_RA=FOV_RA*(1-OVERLAP), STEP_DEC=FOV_DEC*(1-OVERLAP);
-const DEC_MIN=-20, TILE_AREA=STEP_RA*STEP_DEC;
+const TELESCOPES={
+  "visnjan":{label:"Višnjan — Tičan",
+    site:{lat:45.29082,lon:13.74926,tz:"Europe/Zagreb"},
+    optics:"wide-field imager", camera:"—",
+    fovRa:2.45, fovDec:1.63, overlap:0.10, scale:null,
+    filters:["G","R"], exposure:30, decMin:-20, decMax:90, minAlt:40,
+    photometric:true, end:"01:00"},
+  "gochile-got1":{label:"GoChile GoT1 — El Sauce",
+    site:{lat:-30.4725,lon:-70.7631,tz:"America/Santiago"},
+    optics:"400 mm f/6.5 Ritchey–Chrétien, 2600 mm",
+    camera:"IMX455 mono, 36.0×24.0 mm, 3.76 µm",
+    fovRa:0.793, fovDec:0.529, overlap:0.10, scale:0.30,
+    filters:["g","r"], exposure:30, decMin:-90, decMax:20, minAlt:40,
+    photometric:true, end:"03:00"},
+  "gochile-got2":{label:"GoChile GoT2 — El Sauce (wide)",
+    site:{lat:-30.4725,lon:-70.7631,tz:"America/Santiago"},
+    optics:"72 mm f/5.6 refractor, 403 mm",
+    camera:"IMX571 colour, 23.5×15.7 mm, 3.76 µm",
+    fovRa:3.338, fovDec:2.231, overlap:0.10, scale:1.92,
+    filters:["L"], exposure:30, decMin:-90, decMax:20, minAlt:40,
+    photometric:false, end:"03:00"}
+};
+let SCOPE="visnjan", SPEC=TELESCOPES[SCOPE];
+let SITE=SPEC.site;
+let FOV_RA=SPEC.fovRa, FOV_DEC=SPEC.fovDec, OVERLAP=SPEC.overlap;
+let STEP_RA=FOV_RA*(1-OVERLAP), STEP_DEC=FOV_DEC*(1-OVERLAP);
+let DEC_MIN=SPEC.decMin, DEC_MAX=SPEC.decMax, TILE_AREA=STEP_RA*STEP_DEC;
 
-const ROW_N=[];
+let ROW_N=[];
 function buildGrid(){
-  const tiles=[]; let row=0;
-  for(let dec=DEC_MIN; dec<=89.5; dec+=STEP_DEC, row++){
+  const tiles=[]; ROW_N=[]; let row=0, dec=DEC_MIN;
+  while(dec<=Math.min(DEC_MAX,89.5)){
     const n=Math.max(1,Math.round(360*Math.cos(dec*Math.PI/180)/STEP_RA));
     ROW_N[row]=n;
     for(let c=0;c<n;c++) tiles.push({id:row+"_"+c,ra:c*360/n,dec:dec,row:row,col:c});
+    row++; dec=DEC_MIN+row*STEP_DEC;
   }
   return tiles;
 }
-const TILES=buildGrid();
+let TILES=buildGrid();
+
+function setScope(key){
+  SCOPE=key; SPEC=TELESCOPES[key]; SITE=SPEC.site;
+  FOV_RA=SPEC.fovRa; FOV_DEC=SPEC.fovDec; OVERLAP=SPEC.overlap;
+  STEP_RA=FOV_RA*(1-OVERLAP); STEP_DEC=FOV_DEC*(1-OVERLAP);
+  DEC_MIN=SPEC.decMin; DEC_MAX=SPEC.decMax; TILE_AREA=STEP_RA*STEP_DEC;
+  TILES=buildGrid(); CURRENT=null;
+}
 
 const D2R=Math.PI/180, R2D=180/Math.PI;
 function angSep(ra1,d1,ra2,d2){
@@ -314,6 +353,7 @@ function coverageMap(){
   const m=new Map();
   for(const n of NIGHTS){
     if(n.status!=="observed") continue;
+    if((n.telescope||"visnjan")!==SCOPE) continue;
     for(const rec of (n.observed||[])){
       const id=typeof rec==="string"?rec:rec.id;
       const f=typeof rec==="string"?2:(rec.filters?rec.filters.length:2);
@@ -555,17 +595,27 @@ cv.addEventListener("pointerleave",()=>ro.classList.remove("on"));
 
 /* ---------------- panels ---------------------------------------------------- */
 const el=id=>document.getElementById(id);
+function renderSubline(){
+  const st=SITE, ns=st.lat>=0?"N":"S", ew=st.lon>=0?"E":"W";
+  el("subline").innerHTML=SPEC.label+" &middot; "+Math.abs(st.lat).toFixed(3)+"°"+ns+" "+
+    Math.abs(st.lon).toFixed(3)+"°"+ew+" &middot; "+FOV_RA.toFixed(2)+"°×"+FOV_DEC.toFixed(2)+
+    "° &middot; filters "+SPEC.filters.join("/")+(SPEC.photometric?"":" — not photometric")+
+    ' &middot; <a href="https://github.com/elliottburdett/visnjan-sky-ledger" style="color:var(--accent)">source</a>';
+}
 function renderProgress(){
   const cov=coverageMap();
   let done=0; cov.forEach(v=>{ if(v>=2) done++; });
   el("pTiles").textContent=done.toLocaleString()+" / "+TILES.length.toLocaleString();
   el("pArea").textContent=(done*TILE_AREA).toFixed(0)+" deg²";
   const minAlt=+(el("dAlt").value||40);
-  const reachFloor=SITE.lat-(90-minAlt);
-  const reachable=TILES.filter(t=>t.dec>=reachFloor).length;
-  el("cDec").textContent=(DEC_MIN>0?"+":"")+DEC_MIN+"°";
+  const reachFloor=SITE.lat-(90-minAlt), reachCeil=SITE.lat+(90-minAlt);
+  const reachable=TILES.filter(t=>t.dec>=reachFloor&&t.dec<=reachCeil).length;
+  el("cDec").textContent=(DEC_MIN>0?"+":"")+DEC_MIN+"° … "+(DEC_MAX>0?"+":"")+DEC_MAX+"°";
+  el("cOptics").textContent=SPEC.scale?SPEC.optics.split(",")[0]+" · "+SPEC.scale+"\u2033/px":SPEC.optics;
+  el("cFov").textContent=FOV_RA.toFixed(2)+"° × "+FOV_DEC.toFixed(2)+"° ("+TILE_AREA.toFixed(2)+" deg²)";
   el("cTot").textContent=TILES.length.toLocaleString();
-  el("cReach").textContent="Dec ≥ "+(reachFloor>=0?"+":"")+reachFloor.toFixed(1)+"°";
+  el("cReach").textContent=(reachFloor>=0?"+":"")+reachFloor.toFixed(1)+"° … "+
+    (reachCeil>=0?"+":"")+Math.min(reachCeil,90).toFixed(1)+"°";
   el("cUnreach").textContent=(TILES.length-reachable).toLocaleString()+" tiles";
   const per=CURRENT?CURRENT.tiles.length:230;
   el("pNights").textContent=per>0?Math.ceil(Math.max(0,reachable-done)/per):"—";
@@ -639,6 +689,13 @@ function doPlan(){
   renderNight(p); renderProgress(); renderWeather(el("dDate").value); draw();
   el("bSave").disabled=false; el("bCsv").disabled=false;
 }
+el("dScope").addEventListener("change",()=>{
+  setScope(el("dScope").value);
+  el("dAlt").value=SPEC.minAlt; el("dEnd").value=SPEC.end; el("dExp").value=SPEC.exposure;
+  el("bSave").disabled=true; el("bCsv").disabled=true;
+  viewRA=180; viewDec=SITE.lat>=0?20:-20; zoom=1;
+  renderSubline(); renderNight(null); renderProgress(); renderWeather(el("dDate").value); draw();
+});
 el("bPlan").addEventListener("click",doPlan);
 el("dAlt").addEventListener("change",renderProgress);
 el("dDate").addEventListener("change",()=>{ CURRENT=null;
@@ -664,7 +721,7 @@ el("bCsv").addEventListener("click",()=>{
 el("bSave").addEventListener("click",()=>{
   if(!CURRENT) return;
   const date=el("dDate").value;
-  const doc={date:date,status:"planned",
+  const doc={date:date,telescope:SCOPE,status:"planned",
     planned:CURRENT.tiles.map(t=>t.id), observed:[],
     window:{dark:CURRENT.dusk.toISOString(),end:CURRENT.end.toISOString(),
             minutes:Math.round(CURRENT.windowMin)},
@@ -675,7 +732,7 @@ el("bSave").addEventListener("click",()=>{
     region:{centreRa:+CURRENT.centre.ra.toFixed(4),centreDec:+CURRENT.centre.dec.toFixed(4),
             medianSlewDeg:+CURRENT.medSlew.toFixed(3)},
     savedAt:new Date().toISOString()};
-  saveText("night_"+date+".json", JSON.stringify(doc,null,2), "application/json");
+  saveText("night_"+date+"_"+SCOPE+".json", JSON.stringify(doc,null,2), "application/json");
 });
 
 function saveText(name, text, mime){
@@ -686,7 +743,7 @@ function saveText(name, text, mime){
 }
 
 /* ---------------- boot ------------------------------------------------------ */
-renderProgress(); renderLog(); resize();
+renderSubline(); renderProgress(); renderLog(); resize();
 window.addEventListener("resize",resize);
 if(window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener("change",draw);
 

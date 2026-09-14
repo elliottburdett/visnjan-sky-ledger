@@ -96,20 +96,60 @@ anything below the altitude floor or inside the moon keep-out, seed on the
 best-placed remaining tile, then grow outward so the night lands as one compact
 block. Tiles are ordered serpentine by declination row to keep slews short.
 
-**2. Build the sequence.** Point it at your own working NINA sequence as the
-template — its Start and End areas are copied through byte-for-byte, and only
-the `Targets` container is replaced:
+**2. Build the sequence.** Either press **Download NINA .json** in the web
+planner, or run the headless builder against your own working sequence, whose
+Start and End areas are copied through byte-for-byte:
 
 ```bash
-python tools/build_sequence.py data/nights/night_2026-09-12.json \
+python tools/build_sequence.py data/nights/night_2026-09-12_visnjan.json \
        --template templates/observatory_base.json
 ```
 
-Each block is `Switch Filter → Run Autofocus → 30 panels`, alternating G and R
-over the same tiles, so the filter wheel moves once per block and every tile
-finishes in both colours before the night moves on. Panels carry **no
-conditions** — in NINA a container with conditions repeats while they hold true,
-so a per-panel condition makes each panel loop forever instead of advancing.
+Both produce the same structure. The night's tile list is cut into blocks of
+30 tiles and each block is imaged once per filter:
+
+```
+Targets
+  Wait Until Safe
+  Switch G → Run Autofocus → 30 panels           (block order)
+  Switch R → Run Autofocus → the same 30 panels  (reversed)
+  Switch G → Run Autofocus → next 30 panels
+  ...
+```
+
+and a panel is a single `DeepSkyObjectContainer` holding one exposure:
+
+```
+Target preparation   Slew to Ra/Dec (abort on error) → Center (abort on error)
+Target imaging       expose
+```
+
+The filter wheel therefore moves twice per block rather than twice per panel,
+and focus is re-measured on every filter change — which is where focus actually
+moves, since G and R do not come to focus in the same place. The temperature
+and HFR triggers on the Targets container still run on top of that, catching
+drift inside a block. No guiding. Several details are deliberate and worth
+leaving alone:
+
+- **Panels carry no conditions.** In NINA a container with conditions *repeats*
+  while they hold true, so a per-panel condition pins the mount on one tile and
+  re-images it forever instead of advancing.
+- **Every Switch Filter carries its own inline `FilterInfo`** rather than a
+  shared `$ref`. Sharing one filter object across hundreds of instructions is
+  what made earlier files misbehave.
+- **Slew, Center and Switch Filter abort on error**; only the exposure continues.
+  A silently failed slew or filter change produces a night of confidently
+  mislabelled data, which is worse than a stopped sequence.
+- The explicit **Slew** runs before Center rather than relying on Center to move
+  the mount.
+- **Every second filter block retraces its tiles in reverse**, so the mount
+  starts each block from where it finished the last one instead of driving back
+  across the whole region.
+- **Panel names carry the coordinates** — `RA221235_Dec+300000_G` — so a frame
+  can be matched back to its tile and filter from the header alone, with no
+  side-car file.
+- **`Targets` opens with Wait Until Safe**, so a sequence started early parks
+  itself at the top of the block list rather than at an arbitrary panel.
 
 **3. Reconcile.** Record what was actually taken, not what was planned:
 

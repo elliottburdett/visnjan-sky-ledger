@@ -193,6 +193,7 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
           <button class="primary" id="bPlan">Generate plan</button>
           <button id="bSave" disabled>Download plan JSON</button>
           <button id="bCsv" disabled>Export CSV</button>
+          <button id="bNina" disabled>Download NINA .json</button>
         </div>
       </div>
 
@@ -248,22 +249,22 @@ const TELESCOPES={
     site:{lat:45.29082,lon:13.74926,tz:"Europe/Zagreb"},
     optics:"wide-field imager", camera:"—",
     fovRa:2.45, fovDec:1.63, overlap:0.10, scale:null,
-    filters:["G","R"], exposure:30, decMin:-20, decMax:90, minAlt:40,
-    photometric:true, end:"01:00"},
+    filters:["G","R"], filterPositions:{G:2,R:1}, exposure:30,
+    decMin:-20, decMax:90, minAlt:40, photometric:true, nina:true, end:"01:00"},
   "gochile-got1":{label:"GoChile GoT1 — El Sauce",
     site:{lat:-30.4725,lon:-70.7631,tz:"America/Santiago"},
     optics:"400 mm f/6.5 Ritchey–Chrétien, 2600 mm",
     camera:"IMX455 mono, 36.0×24.0 mm, 3.76 µm",
     fovRa:0.793, fovDec:0.529, overlap:0.10, scale:0.30,
-    filters:["g","r"], exposure:30, decMin:-90, decMax:20, minAlt:40,
-    photometric:true, end:"03:00"},
+    filters:["g","r"], filterPositions:{}, exposure:30,
+    decMin:-90, decMax:20, minAlt:40, photometric:true, nina:false, end:"03:00"},
   "gochile-got2":{label:"GoChile GoT2 — El Sauce (wide)",
     site:{lat:-30.4725,lon:-70.7631,tz:"America/Santiago"},
     optics:"72 mm f/5.6 refractor, 403 mm",
     camera:"IMX571 colour, 23.5×15.7 mm, 3.76 µm",
     fovRa:3.338, fovDec:2.231, overlap:0.10, scale:1.92,
-    filters:["L"], exposure:30, decMin:-90, decMax:20, minAlt:40,
-    photometric:false, end:"03:00"}
+    filters:["L"], filterPositions:{}, exposure:30,
+    decMin:-90, decMax:20, minAlt:40, photometric:false, nina:false, end:"03:00"}
 };
 let SCOPE="visnjan", SPEC=TELESCOPES[SCOPE];
 let SITE=SPEC.site;
@@ -740,6 +741,176 @@ function renderLog(){
   wrap.innerHTML="<table><thead><tr><th>Night</th><th>Status</th><th>Pass</th><th>Planned</th><th>Observed</th><th>Note</th></tr></thead><tbody>"+rows+"</tbody></table>";
 }
 
+const NINA_TEMPLATE={"start":{"$id":"4","$type":"NINA.Sequencer.Container.StartAreaContainer, NINA.Sequencer","Strategy":{"$type":"NINA.Sequencer.Container.ExecutionStrategy.SequentialStrategy, NINA.Sequencer"},"Name":"Start","Conditions":{"$id":"5","$type":"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.Conditions.ISequenceCondition, NINA.Sequencer]], System.ObjectModel","$values":[]},"IsExpanded":true,"Items":{"$id":"6","$type":"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.SequenceItem.ISequenceItem, NINA.Sequencer]], System.ObjectModel","$values":[{"$id":"7","$type":"NINA.Sequencer.SequenceItem.Camera.CoolCamera, NINA.Sequencer","Temperature":-10.0,"Duration":0.0,"Parent":{"$ref":"4"},"ErrorBehavior":0,"Attempts":1},{"$id":"8","$type":"NINA.Sequencer.SequenceItem.Telescope.UnparkScope, NINA.Sequencer","Parent":{"$ref":"4"},"ErrorBehavior":0,"Attempts":1},{"$id":"9","$type":"NINA.Sequencer.SequenceItem.FlatDevice.OpenCover, NINA.Sequencer","Parent":{"$ref":"4"},"ErrorBehavior":0,"Attempts":1},{"$id":"10","$type":"NINA.Sequencer.SequenceItem.SafetyMonitor.WaitUntilSafe, NINA.Sequencer","Parent":{"$ref":"4"},"ErrorBehavior":0,"Attempts":1},{"$id":"11","$type":"NINA.Sequencer.SequenceItem.Utility.WaitForTime, NINA.Sequencer","Hours":22,"Minutes":2,"MinutesOffset":0,"Seconds":54,"SelectedProvider":{"$id":"12","$type":"NINA.Sequencer.Utility.DateTimeProvider.DuskProvider, NINA.Sequencer"},"Parent":{"$ref":"4"},"ErrorBehavior":0,"Attempts":1},{"$id":"13","$type":"NINA.Sequencer.SequenceItem.SafetyMonitor.WaitUntilSafe, NINA.Sequencer","Parent":{"$ref":"4"},"ErrorBehavior":0,"Attempts":1},{"$id":"14","$type":"NINA.Sequencer.SequenceItem.Switch.SetSwitchValue, NINA.Sequencer","Value":1.0,"SwitchIndex":0,"Parent":{"$ref":"4"},"ErrorBehavior":0,"Attempts":1},{"$id":"15","$type":"NINA.Sequencer.SequenceItem.Switch.SetSwitchValue, NINA.Sequencer","Value":0.0,"SwitchIndex":0,"Parent":{"$ref":"4"},"ErrorBehavior":0,"Attempts":1}]},"Triggers":{"$id":"16","$type":"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.Trigger.ISequenceTrigger, NINA.Sequencer]], System.ObjectModel","$values":[]},"Parent":{"$ref":"1"},"ErrorBehavior":0,"Attempts":1},"end":{"$id":"17","$type":"NINA.Sequencer.Container.EndAreaContainer, NINA.Sequencer","Strategy":{"$type":"NINA.Sequencer.Container.ExecutionStrategy.SequentialStrategy, NINA.Sequencer"},"Name":"End","Conditions":{"$id":"18","$type":"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.Conditions.ISequenceCondition, NINA.Sequencer]], System.ObjectModel","$values":[]},"IsExpanded":true,"Items":{"$id":"19","$type":"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.SequenceItem.ISequenceItem, NINA.Sequencer]], System.ObjectModel","$values":[{"$id":"20","$type":"NINA.Sequencer.Container.ParallelContainer, NINA.Sequencer","Strategy":{"$type":"NINA.Sequencer.Container.ExecutionStrategy.ParallelStrategy, NINA.Sequencer"},"Name":"Parallel Instruction Set","Conditions":{"$id":"21","$type":"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.Conditions.ISequenceCondition, NINA.Sequencer]], System.ObjectModel","$values":[]},"IsExpanded":true,"Items":{"$id":"22","$type":"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.SequenceItem.ISequenceItem, NINA.Sequencer]], System.ObjectModel","$values":[{"$id":"23","$type":"NINA.Sequencer.SequenceItem.Telescope.FindHome, NINA.Sequencer","Parent":{"$ref":"20"},"ErrorBehavior":0,"Attempts":1},{"$id":"24","$type":"NINA.Sequencer.SequenceItem.FlatDevice.CloseCover, NINA.Sequencer","Parent":{"$ref":"20"},"ErrorBehavior":0,"Attempts":1},{"$id":"25","$type":"NINA.Sequencer.SequenceItem.Camera.WarmCamera, NINA.Sequencer","Duration":0.0,"Parent":{"$ref":"20"},"ErrorBehavior":0,"Attempts":1},{"$id":"26","$type":"NINA.Sequencer.SequenceItem.Switch.SetSwitchValue, NINA.Sequencer","Value":1.0,"SwitchIndex":0,"Parent":{"$ref":"20"},"ErrorBehavior":0,"Attempts":1}]},"Triggers":{"$id":"27","$type":"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.Trigger.ISequenceTrigger, NINA.Sequencer]], System.ObjectModel","$values":[]},"Parent":{"$ref":"17"},"ErrorBehavior":0,"Attempts":1},{"$id":"28","$type":"NINA.Sequencer.SequenceItem.Switch.SetSwitchValue, NINA.Sequencer","Value":0.0,"SwitchIndex":0,"Parent":{"$ref":"17"},"ErrorBehavior":0,"Attempts":1}]},"Triggers":{"$id":"29","$type":"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.Trigger.ISequenceTrigger, NINA.Sequencer]], System.ObjectModel","$values":[]},"Parent":{"$ref":"1"},"ErrorBehavior":0,"Attempts":1}};
+/* ---- NINA Advanced Sequencer export -------------------------------------
+   Emits the block layout of MeridianSweep_..._blocks.json. The night's tile
+   list is cut into blocks of AF_BLOCK tiles; each block is imaged once per
+   filter. A block opens with a SwitchFilter (its own inline FilterInfo, never
+   a $ref — shared references are what made earlier files misbehave) followed
+   by a standalone RunAutofocus, then one DeepSkyObjectContainer per tile
+   holding a single exposure. Every second filter walks the same tiles in
+   reverse, so the mount starts the next block where it finished the last.
+   Panel names carry the coordinates (RAhhmmss_Dec+ddmmss_F) so frames can be
+   matched back to tiles without a side-car file. Panels carry NO conditions:
+   a container with conditions repeats while they hold, which is what used to
+   pin the mount on one tile. Targets opens with WaitUntilSafe; Start and End
+   areas are your own observatory blocks, copied verbatim. */
+const AF_BLOCK = 30;          /* tiles per filter block, i.e. autofocus cadence */
+let _nid = 10000;
+function nid(){ return String(_nid++); }
+const T_SEQ = ", NINA.Sequencer", T_CORE = ", NINA.Core";
+function strategy(){ return {"$type":"NINA.Sequencer.Container.ExecutionStrategy.SequentialStrategy"+T_SEQ}; }
+function coll(kind, values){
+  const t={cond:"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.Conditions.ISequenceCondition"+T_SEQ+"]], System.ObjectModel",
+           item:"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.SequenceItem.ISequenceItem"+T_SEQ+"]], System.ObjectModel",
+           trig:"System.Collections.ObjectModel.ObservableCollection`1[[NINA.Sequencer.Trigger.ISequenceTrigger"+T_SEQ+"]], System.ObjectModel"}[kind];
+  return {"$id":nid(),"$type":t,"$values":values};
+}
+function binning(){ return {"$id":nid(),"$type":"NINA.Core.Model.Equipment.BinningMode"+T_CORE,"X":1,"Y":1}; }
+function coordsOf(ra,dec){
+  const rh=ra/15, h=Math.floor(rh), mm=(rh-h)*60, m=Math.floor(mm);
+  const neg=dec<0, ad=Math.abs(dec), dd=Math.floor(ad), dmf=(ad-dd)*60, dm=Math.floor(dmf);
+  return {"$id":nid(),"$type":"NINA.Astrometry.InputCoordinates, NINA.Astrometry",
+    "RAHours":h,"RAMinutes":m,"RASeconds":+(((mm-m)*60).toFixed(5)),
+    "NegativeDec":neg,"DecDegrees":dd,"DecMinutes":dm,"DecSeconds":+(((dmf-dm)*60).toFixed(5))};
+}
+/* panel name encodes the tile centre: RA221235_Dec+300000_G */
+function sexName(ra,dec,filt){
+  const p=n=>String(n).padStart(2,"0");
+  let rh=ra/15, h=Math.floor(rh), mf=(rh-h)*60, m=Math.floor(mf), s=Math.round((mf-m)*60);
+  if(s===60){s=0;m++;} if(m===60){m=0;h++;} h%=24;
+  const neg=dec<0, ad=Math.abs(dec);
+  let dd=Math.floor(ad), df=(ad-dd)*60, dm=Math.floor(df), ds=Math.round((df-dm)*60);
+  if(ds===60){ds=0;dm++;} if(dm===60){dm=0;dd++;}
+  return "RA"+p(h)+p(m)+p(s)+"_Dec"+(neg?"-":"+")+p(dd)+p(dm)+p(ds)+"_"+filt;
+}
+/* a fresh, fully inline FilterInfo every time - deliberately not shared */
+function filterInfo(name,pos){
+  return {"$id":nid(),"$type":"NINA.Core.Model.Equipment.FilterInfo"+T_CORE,
+    "_name":name,"_focusOffset":0,"_position":pos,
+    "_autoFocusExposureTime":-1.0,"_autoFocusFilter":false,
+    "FlatWizardFilterSettings":{"$id":nid(),"$type":"NINA.Core.Model.Equipment.FlatWizardFilterSettings"+T_CORE,
+      "FlatWizardMode":0,"HistogramMeanTarget":0.4,"HistogramTolerance":0.1,
+      "MaxFlatExposureTime":3.0,"MinFlatExposureTime":0.01,
+      "MaxAbsoluteFlatDeviceBrightness":80,"MinAbsoluteFlatDeviceBrightness":0,
+      "Gain":-1,"Offset":-1,"Binning":binning()},
+    "_autoFocusBinning":binning(),"_autoFocusGain":-1,"_autoFocusOffset":-1};
+}
+function seqContainer(name,parentId,items){
+  const cid=nid();
+  return {"$id":cid,"$type":"NINA.Sequencer.Container.SequentialContainer"+T_SEQ,
+    "Strategy":strategy(),"Name":name,"Conditions":coll("cond",[]),"IsExpanded":false,
+    "Items":coll("item",items(cid)),"Triggers":coll("trig",[]),
+    "Parent":{"$ref":parentId},"ErrorBehavior":0,"Attempts":1};
+}
+function ninaPanel(tile,targetsId,expSec,filt){
+  const dso=nid(), name=sexName(tile.ra,tile.dec,filt);
+  const prep = seqContainer("Target preparation instructions",dso,pid=>[
+    {"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.Telescope.SlewScopeToRaDec"+T_SEQ,
+     "Inherited":false,"Coordinates":coordsOf(tile.ra,tile.dec),
+     "Parent":{"$ref":pid},"ErrorBehavior":1,"Attempts":2},
+    {"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.Platesolving.Center"+T_SEQ,
+     "Inherited":false,"Coordinates":coordsOf(tile.ra,tile.dec),
+     "Parent":{"$ref":pid},"ErrorBehavior":1,"Attempts":3}]);
+  /* no SwitchFilter in here - the block already selected the filter */
+  const img = seqContainer("Target imaging instructions",dso,iid=>[
+    {"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.Imaging.TakeExposure"+T_SEQ,
+     "ExposureTime":expSec,"Gain":-1,"Offset":-1,"Binning":binning(),
+     "ImageType":"LIGHT","ExposureCount":0,
+     "Parent":{"$ref":iid},"ErrorBehavior":0,"Attempts":1}]);
+  return {"$id":dso,"$type":"NINA.Sequencer.Container.DeepSkyObjectContainer"+T_SEQ,
+    "Target":{"$id":nid(),"$type":"NINA.Astrometry.InputTarget, NINA.Astrometry",
+      "Expanded":true,"TargetName":name,"PositionAngle":0.0,
+      "InputCoordinates":coordsOf(tile.ra,tile.dec)},
+    "ExposureInfoListExpanded":false,
+    "ExposureInfoList":{"$id":nid(),
+      "$type":"NINA.Core.Utility.AsyncObservableCollection`1[[NINA.Sequencer.Utility.ExposureInfo"+T_SEQ+"]], NINA.Core",
+      "$values":[{"$id":nid(),"$type":"NINA.Sequencer.Utility.ExposureInfo"+T_SEQ,
+        "Count":1,"Filter":filt,"ExposureTime":expSec,"Gain":101,"Offset":30,
+        "ImageType":"LIGHT","BinningX":1,"BinningY":1,"ROI":1.0}]},
+    "Strategy":strategy(),"Name":name,
+    "Conditions":coll("cond",[]),            /* empty on purpose - see header */
+    "IsExpanded":false,
+    "Items":coll("item",[prep,img]),
+    "Triggers":coll("trig",[]),
+    "Parent":{"$ref":targetsId},"ErrorBehavior":0,"Attempts":1};
+}
+function afTrigger(type,parentId,extra){
+  const tid=nid(), run=nid();
+  return Object.assign({"$id":tid,"$type":type},extra,{"Parent":{"$ref":parentId},
+    "TriggerRunner":{"$id":run,"$type":"NINA.Sequencer.Container.SequentialContainer"+T_SEQ,
+      "Strategy":strategy(),"Name":null,"Conditions":coll("cond",[]),"IsExpanded":true,
+      "Items":coll("item",[{"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.Autofocus.RunAutofocus"+T_SEQ,
+        "Parent":{"$ref":run},"ErrorBehavior":0,"Attempts":1}]),
+      "Triggers":coll("trig",[]),"Parent":null,"ErrorBehavior":0,"Attempts":1}});
+}
+function renumber(doc){
+  const map=new Map(); let next=1;
+  (function a(o){
+    if(Array.isArray(o)) return o.forEach(a);
+    if(o&&typeof o==="object"){
+      if("$id" in o){ map.set(o["$id"],String(next)); o["$id"]=String(next); next++; }
+      for(const k in o) if(k!=="$id") a(o[k]);
+    }
+  })(doc);
+  (function b(o){
+    if(Array.isArray(o)) return o.forEach(b);
+    if(o&&typeof o==="object"){
+      if("$ref" in o && map.has(o["$ref"])) o["$ref"]=map.get(o["$ref"]);
+      for(const k in o) b(o[k]);
+    }
+  })(doc);
+  return doc;
+}
+function buildNina(plan,dateStr,endHHMM){
+  _nid=10000;
+  const positions=SPEC.filterPositions, filters=SPEC.filters;
+  const exp=+el("dExp").value||SPEC.exposure;
+  const rootId="1", targetsId=nid();
+  /* Targets opens by waiting for safe conditions, then runs filter blocks:
+     SwitchFilter -> RunAutofocus -> AF_BLOCK panels, one exposure each.     */
+  const items=[{"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.SafetyMonitor.WaitUntilSafe"+T_SEQ,
+                "Parent":{"$ref":targetsId},"ErrorBehavior":0,"Attempts":1}];
+  for(let i=0;i<plan.tiles.length;i+=AF_BLOCK){
+    const chunk=plan.tiles.slice(i,i+AF_BLOCK);
+    filters.forEach((f,k)=>{
+      items.push({"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.FilterWheel.SwitchFilter"+T_SEQ,
+        "Filter":filterInfo(f,positions[f]),
+        "Parent":{"$ref":targetsId},"ErrorBehavior":1,"Attempts":2});
+      items.push({"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.Autofocus.RunAutofocus"+T_SEQ,
+        "Parent":{"$ref":targetsId},"ErrorBehavior":0,"Attempts":1});
+      /* serpentine: odd filters retrace the block so the slew home is short */
+      const order=(k%2)?chunk.slice().reverse():chunk;
+      for(const t of order) items.push(ninaPanel(t,targetsId,exp,f));
+    });
+  }
+  const [hh,mm]=endHHMM.split(":").map(Number);
+  const targets={"$id":targetsId,"$type":"NINA.Sequencer.Container.TargetAreaContainer"+T_SEQ,
+    "Strategy":strategy(),"Name":"Targets",
+    "Conditions":coll("cond",[
+      {"$id":nid(),"$type":"NINA.Sequencer.Conditions.TimeCondition"+T_SEQ,
+       "Hours":hh,"Minutes":mm,"MinutesOffset":0,"Seconds":0,
+       "SelectedProvider":{"$id":nid(),"$type":"NINA.Sequencer.Utility.DateTimeProvider.TimeProvider"+T_SEQ},
+       "Parent":{"$ref":targetsId}},
+      {"$id":nid(),"$type":"NINA.Sequencer.Conditions.SafetyMonitorCondition"+T_SEQ,
+       "Parent":{"$ref":targetsId}}]),
+    "IsExpanded":true,"Items":coll("item",items),
+    "Triggers":coll("trig",[
+      afTrigger("NINA.Sequencer.Trigger.Autofocus.AutofocusAfterTemperatureChangeTrigger"+T_SEQ,targetsId,{"Amount":2.0}),
+      afTrigger("NINA.Sequencer.Trigger.Autofocus.AutofocusAfterHFRIncreaseTrigger"+T_SEQ,targetsId,{"Amount":10.0,"SampleSize":10})]),
+    "Parent":{"$ref":rootId},"ErrorBehavior":0,"Attempts":1};
+
+  const start=JSON.parse(JSON.stringify(NINA_TEMPLATE.start));
+  const end=JSON.parse(JSON.stringify(NINA_TEMPLATE.end));
+  start.Parent={"$ref":rootId}; end.Parent={"$ref":rootId};
+  const doc={"$id":rootId,"$type":"NINA.Sequencer.Container.SequenceRootContainer"+T_SEQ,
+    "Strategy":strategy(),"Name":"SkyLedger_"+dateStr+"_"+SCOPE,
+    "Conditions":coll("cond",[]),"IsExpanded":true,
+    "Items":coll("item",[start,targets,end]),
+    "Triggers":coll("trig",[]),"Parent":null,"ErrorBehavior":0,"Attempts":1};
+  return renumber(doc);
+}
+
 /* ---------------- controls -------------------------------------------------- */
 function todayLocal(){
   return new Intl.DateTimeFormat("en-CA",{timeZone:SITE.tz,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
@@ -756,11 +927,12 @@ function doPlan(){
   viewRA=p.centre.ra; viewDec=Math.max(-85,Math.min(85,p.centre.dec));
   renderNight(p); renderProgress(); renderWeather(el("dDate").value); draw();
   el("bSave").disabled=false; el("bCsv").disabled=false;
+  el("bNina").disabled=!SPEC.nina;
 }
 el("dScope").addEventListener("change",()=>{
   setScope(el("dScope").value);
   el("dAlt").value=SPEC.minAlt; el("dEnd").value=SPEC.end; el("dExp").value=SPEC.exposure;
-  el("bSave").disabled=true; el("bCsv").disabled=true;
+  el("bSave").disabled=true; el("bCsv").disabled=true; el("bNina").disabled=true;
   viewRA=180; viewDec=SITE.lat>=0?20:-20; zoom=1;
   renderSubline(); renderNight(null); renderProgress(); renderMockBar();
   renderWeather(el("dDate").value); draw();
@@ -769,7 +941,7 @@ el("bPlan").addEventListener("click",doPlan);
 el("dAlt").addEventListener("change",renderProgress);
 el("dPass").addEventListener("change",renderProgress);
 el("dDate").addEventListener("change",()=>{ CURRENT=null;
-  el("bSave").disabled=true; el("bCsv").disabled=true;
+  el("bSave").disabled=true; el("bCsv").disabled=true; el("bNina").disabled=true;
   renderNight(null); renderWeather(el("dDate").value); draw(); });
 
 el("bCsv").addEventListener("click",()=>{
@@ -786,6 +958,13 @@ el("bCsv").addEventListener("click",()=>{
   });
   const csv=lines.join("\n");
   saveText("plan_"+el("dDate").value+".csv", csv, "text/csv");
+});
+
+el("bNina").addEventListener("click",()=>{
+  if(!CURRENT||!SPEC.nina) return;
+  const doc=buildNina(CURRENT, el("dDate").value, el("dEnd").value);
+  saveText("SkyLedger_"+el("dDate").value+"_"+SCOPE+".json",
+           JSON.stringify(doc,null,2),"application/json");
 });
 
 el("bSave").addEventListener("click",()=>{
@@ -816,7 +995,7 @@ function saveText(name, text, mime){
 renderSubline(); renderProgress(); renderLog(); renderMockBar(); resize();
 el("mockToggle").addEventListener("change",()=>{
   INCLUDE_MOCK=el("mockToggle").checked;
-  CURRENT=null; el("bSave").disabled=true; el("bCsv").disabled=true;
+  CURRENT=null; el("bSave").disabled=true; el("bCsv").disabled=true; el("bNina").disabled=true;
   renderNight(null); renderProgress(); draw();
 });
 window.addEventListener("resize",resize);

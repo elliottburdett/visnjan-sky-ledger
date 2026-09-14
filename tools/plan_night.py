@@ -39,21 +39,27 @@ def dark_start(date, LOC):
     return None
 
 
-def covered_map(scope):
+def covered_map(scope, include_mock=True):
+    """tile id -> completed passes. A pass is one visit in every survey filter."""
     p = ROOT/"data"/"coverage.json"
     if not p.exists():
         return {}
-    m = {}
+    filters = TELESCOPES[scope]["filters"]
+    raw = {}
     for n in json.loads(p.read_text()).get("nights", []):
         if n.get("status") != "observed":
             continue
         if n.get("telescope", DEFAULT) != scope:
             continue
+        if n.get("mock") and not include_mock:
+            continue
         for rec in n.get("observed", []):
             i = rec["id"] if isinstance(rec, dict) else rec
-            f = len(rec.get("filters", ["G", "R"])) if isinstance(rec, dict) else 2
-            m[i] = min(2, m.get(i, 0) + f)
-    return m
+            fs = rec.get("filters", filters) if isinstance(rec, dict) else filters
+            d = raw.setdefault(i, {})
+            for f in fs:
+                d[f] = d.get(f, 0) + 1
+    return {i: min(d.get(f, 0) for f in filters) for i, d in raw.items()}
 
 
 def main():
@@ -65,6 +71,10 @@ def main():
     ap.add_argument("--moon-keepout", type=float, default=30)
     ap.add_argument("--exp", type=float, default=30)
     ap.add_argument("--efficiency", type=float, default=100)
+    ap.add_argument("--pass", dest="target_pass", type=int, default=1,
+                    help="build this pass: skip tiles already at this depth (default 1)")
+    ap.add_argument("--no-mock", action="store_true",
+                    help="ignore synthetic nights when computing coverage")
     a = ap.parse_args()
 
     spec = TELESCOPES[a.telescope]
@@ -86,7 +96,7 @@ def main():
 
     capacity = int(window_min * 60 / (2 * a.exp / (a.efficiency / 100)))
     mid = dusk + (end - dusk) / 2
-    cov = covered_map(a.telescope)
+    cov = covered_map(a.telescope, include_mock=not a.no_mock)
 
     tiles = build_grid(a.telescope)
     ra = np.array([t["ra"] for t in tiles]); dec = np.array([t["dec"] for t in tiles])
@@ -97,7 +107,7 @@ def main():
     sun = get_sun(mid)
     illum = (1 - np.cos(np.radians(sun.separation(moon).deg))) / 2
 
-    ok = np.array([cov.get(t["id"], 0) < 2 for t in tiles]) & (alt >= min_alt)
+    ok = np.array([cov.get(t["id"], 0) < a.target_pass for t in tiles]) & (alt >= min_alt)
     if m_alt > -2 and a.moon_keepout > 0:
         ok &= sep >= a.moon_keepout
     idx = np.where(ok)[0]
@@ -119,6 +129,7 @@ def main():
         order += [i for _, i in arr]
 
     out = {"date": a.date, "telescope": a.telescope, "status": "planned",
+           "pass": a.target_pass,
            "planned": [tiles[i]["id"] for i in order], "observed": [],
            "window": {"dark": dusk.isot + "Z", "end": end.isot + "Z", "minutes": round(window_min)},
            "params": {"expSec": a.exp, "minAlt": min_alt,
@@ -130,8 +141,8 @@ def main():
     p = ROOT/"data"/"nights"/f"night_{a.date}_{a.telescope}.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(out, indent=2))
-    print(f"{a.date} [{a.telescope}]: dark {(dusk + TZ*u.hour).iso[11:16]} -> {end_s}, "
-          f"{round(window_min)} min")
+    print(f"{a.date} [{a.telescope}] pass {a.target_pass}: "
+          f"dark {(dusk + TZ*u.hour).iso[11:16]} -> {end_s}, {round(window_min)} min")
     print(f"  {len(order)} tiles, moon {illum*100:.0f}% {'up' if m_alt > 0 else 'down'}, "
           f"nearest {sep[order].min():.0f}deg")
     print(f"  dec {dec[order].min():+.1f}..{dec[order].max():+.1f}, "

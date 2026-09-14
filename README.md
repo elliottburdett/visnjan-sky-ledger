@@ -60,6 +60,23 @@ planner defaults to Višnjan.
 At a 40° altitude floor each site can only ever reach part of the sky, and the
 planner shows the reachable limits for whatever floor you set.
 
+## Passes, not percent done
+
+The sky is never "finished". A **pass** is one complete visit to a tile in every
+survey filter, and tiles can be revisited indefinitely — repeat epochs are the
+point of a variable-star and transient survey, not wasted time. Coverage is
+therefore tracked as *depth*:
+
+```
+passes(tile) = min over filters of (times that filter was taken)
+```
+
+A tile with G but no R yet sits at zero passes and shows as *partial*; the
+planner will finish it before moving on. `--pass 2` targets everything that has
+not yet reached two complete visits, which usually means re-walking sky you have
+already covered once. The map shades 0 / partial / 1 / 2 / 3+ passes, and the
+header reports coverage *at the pass you are currently building*.
+
 ## How a night works
 
 ```
@@ -106,6 +123,33 @@ become complete.
 **4. Commit.** `data/coverage.json` is the ledger. Committing it is what makes
 the survey's history reproducible and the coverage map update.
 
+## Simulated nights
+
+To exercise the planner without waiting for clear sky, generate synthetic
+observations from a plan:
+
+```bash
+python tools/plan_night.py 2026-09-20 --pass 1
+python tools/mock_observe.py data/nights/night_2026-09-20_visnjan.json \
+       --completion 0.6 --seeing 2.5 --fail-rate 0.03 --seed 1
+```
+
+It writes frame metadata to `data/mock/frames_<date>_<telescope>.csv` in the same
+format `reconcile.py` consumes, then folds it into `coverage.json` through the
+same coordinate-matching path real frames take. Plan the next night and it will
+route around what the mock "observed"; ask for `--pass 2` and it will go back
+over it.
+
+`--completion` is the honest knob: 0.6 reflects roughly what per-panel overhead
+actually leaves you, so the simulated ledger fills at a believable rate.
+
+**It is fake, and marked as fake in four places:** `"mock": true` on the night
+record, a note beginning `SYNTHETIC`, a `mock=1` column on every frame row, and a
+magenta banner across the web page whenever any mock night is loaded — with a
+checkbox to exclude it from coverage entirely. It simulates frame *metadata*
+only; no pixels, nothing that could be mistaken for imagery. To purge it, delete
+`data/mock/` and drop the `"mock": true` entries from `coverage.json`.
+
 ## Weather
 
 ```bash
@@ -121,11 +165,13 @@ User-Agent.
 
 ```
 index.html            planner + coverage map (static; GitHub Pages)
-data/coverage.json    the ledger — observed tiles per night
+data/coverage.json    the ledger — observed tiles per night, per telescope
+data/mock/            synthetic frame lists (delete to purge simulated data)
 data/weather.json     forecast snapshots
 data/nights/          one plan per night
 tools/grid.py         telescope table + tile grids; the JS in index.html mirrors it
-tools/plan_night.py   headless planner
+tools/plan_night.py   headless planner (--pass N, --no-mock)
+tools/mock_observe.py simulated observations for testing the loop
 tools/build_sequence.py   plan -> NINA Advanced Sequencer file
 tools/reconcile.py    frames -> coverage
 tools/fetch_weather.py    met.no -> weather.json

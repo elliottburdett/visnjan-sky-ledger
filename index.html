@@ -12,8 +12,8 @@
   --void:#f4f3ee; --panel:#ffffff; --panel-2:#e9e7df; --edge:#d6d3c8;
   --ink:#171a24; --ink-dim:#5a6072;
   --accent:#37509b; --accent-soft:#e2e6f4;
-  --cov-0:#dcdad2; --cov-1:#6d84c9; --cov-2:#1d8ea1;
-  --plan:#c47a1e; --moon:#8a7bbf;
+  --cov-0:#dcdad2; --cov-p:#c3c6cc; --cov-1:#8fa4d8; --cov-2:#3f76a8; --cov-3:#0b4f5c;
+  --plan:#c47a1e; --moon:#8a7bbf; --mock:#a24ea2;
   --ok:#2f8f5b; --warn:#b8802b; --bad:#b8453c;
   --grid:rgba(55,80,155,0.22); --sky:#eceae2;
 }
@@ -22,8 +22,8 @@
     --void:#0a0d16; --panel:#131827; --panel-2:#1b2133; --edge:#28304a;
     --ink:#e6e8f2; --ink-dim:#8b92ad;
     --accent:#7f95dd; --accent-soft:#1c2340;
-    --cov-0:#1c2233; --cov-1:#3f5aa6; --cov-2:#56c7d6;
-    --plan:#f0a850; --moon:#b0a2e8;
+    --cov-0:#1c2233; --cov-p:#2b3350; --cov-1:#3f5aa6; --cov-2:#56c7d6; --cov-3:#b9f2ea;
+    --plan:#f0a850; --moon:#b0a2e8; --mock:#d98ad9;
     --ok:#4fbf7b; --warn:#e0a33f; --bad:#e0655a;
     --grid:rgba(127,149,221,0.20); --sky:#0e1220;
   }
@@ -32,8 +32,8 @@
   --void:#0a0d16; --panel:#131827; --panel-2:#1b2133; --edge:#28304a;
   --ink:#e6e8f2; --ink-dim:#8b92ad;
   --accent:#7f95dd; --accent-soft:#1c2340;
-  --cov-0:#1c2233; --cov-1:#3f5aa6; --cov-2:#56c7d6;
-  --plan:#f0a850; --moon:#b0a2e8;
+  --cov-0:#1c2233; --cov-p:#2b3350; --cov-1:#3f5aa6; --cov-2:#56c7d6; --cov-3:#b9f2ea;
+  --plan:#f0a850; --moon:#b0a2e8; --mock:#d98ad9;
   --ok:#4fbf7b; --warn:#e0a33f; --bad:#e0655a;
   --grid:rgba(127,149,221,0.20); --sky:#0e1220;
 }
@@ -117,6 +117,12 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
 .logsect h2{font-size:.66rem;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-dim);
   margin:0;padding:12px 22px 8px;font-weight:600}
 .note{font-size:.73rem;color:var(--ink-dim);line-height:1.5}
+.mockbar{display:none;align-items:center;gap:12px;flex-wrap:wrap;flex:none;
+  padding:8px 22px;background:var(--mock);color:#fff;font-size:.78rem;font-weight:600}
+.mockbar.on{display:flex}
+.mockbar .sp{font-weight:400;opacity:.92}
+.mockbar label{display:flex;align-items:center;gap:6px;margin-left:auto;font-weight:600;cursor:pointer}
+.tag.mock{background:var(--mock);color:#fff}
 .empty{padding:14px 22px;color:var(--ink-dim);font-size:.78rem}
 </style>
 </head>
@@ -128,11 +134,18 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
       <p class="sub" id="subline">two-site photometric survey</p>
     </div>
     <div class="progress-strip">
-      <div class="pstat"><div class="k">Tiles complete</div><div class="v" id="pTiles">—</div></div>
-      <div class="pstat"><div class="k">Sky covered</div><div class="v" id="pArea">—</div></div>
-      <div class="pstat"><div class="k">Clear nights left</div><div class="v" id="pNights">—</div></div>
+      <div class="pstat"><div class="k" id="pTilesK">Pass 1 coverage</div><div class="v" id="pTiles">—</div></div>
+      <div class="pstat"><div class="k">Sky touched</div><div class="v" id="pArea">—</div></div>
+      <div class="pstat"><div class="k">Deepest / median</div><div class="v" id="pDepth">—</div></div>
+      <div class="pstat"><div class="k" id="pNightsK">Nights to finish pass 1</div><div class="v" id="pNights">—</div></div>
     </div>
   </header>
+
+  <div class="mockbar" id="mockBar">
+    <span>✱ SYNTHETIC DATA LOADED</span>
+    <span class="sp" id="mockWhat"></span>
+    <label><input type="checkbox" id="mockToggle" checked> count it in coverage</label>
+  </div>
 
   <main>
     <div class="mapwrap">
@@ -143,9 +156,12 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
       </div>
       <div class="hint">drag to rotate the sky &middot; scroll to zoom</div>
       <div class="maplegend">
-        <div class="key"><span class="chip" style="background:var(--cov-0)"></span>not observed</div>
-        <div class="key"><span class="chip" style="background:var(--cov-1)"></span>one filter</div>
-        <div class="key"><span class="chip" style="background:var(--cov-2)"></span>G and R complete</div>
+        <div class="key">passes:</div>
+        <div class="key"><span class="chip" style="background:var(--cov-0)"></span>0</div>
+        <div class="key"><span class="chip" style="background:var(--cov-p)"></span>partial</div>
+        <div class="key"><span class="chip" style="background:var(--cov-1)"></span>1</div>
+        <div class="key"><span class="chip" style="background:var(--cov-2)"></span>2</div>
+        <div class="key"><span class="chip" style="background:var(--cov-3)"></span>3+</div>
         <div class="key"><span class="chip" style="background:var(--plan)"></span>this night's plan</div>
         <div class="key"><span class="chip" style="background:var(--moon);border-radius:50%;width:10px;height:10px"></span>moon &amp; exclusion</div>
         <div class="key" style="margin-left:auto">Aitoff &middot; grid 2h / 30&deg;</div>
@@ -169,7 +185,10 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
           <label class="fld"><span>Exposure (s)</span><input type="number" id="dExp" value="30" min="5" max="600" step="5"></label>
           <label class="fld"><span>Moon keep-out</span><input type="number" id="dMoon" value="30" min="0" max="120" step="5"></label>
         </div>
-        <label class="fld"><span>Efficiency %</span><input type="number" id="dEff" value="100" min="20" max="100" step="5"></label>
+        <div class="two">
+          <label class="fld"><span>Efficiency %</span><input type="number" id="dEff" value="100" min="20" max="100" step="5"></label>
+          <label class="fld"><span>Build pass #</span><input type="number" id="dPass" value="1" min="1" max="20" step="1"></label>
+        </div>
         <div class="btnrow">
           <button class="primary" id="bPlan">Generate plan</button>
           <button id="bSave" disabled>Download plan JSON</button>
@@ -185,6 +204,7 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
         <div class="row"><span class="k">Nearest tile to moon</span><span class="v" id="nSep">—</span></div>
         <div class="row"><span class="k">Region centre</span><span class="v" id="nCentre">—</span></div>
         <div class="row"><span class="k">Region extent</span><span class="v" id="nSpan">—</span></div>
+        <div class="row"><span class="k">Building pass</span><span class="v" id="nPass">—</span></div>
         <div class="row"><span class="k">Tiles planned</span><span class="v" id="nTiles">—</span></div>
         <div class="row"><span class="k">Median slew</span><span class="v" id="nSlew">—</span></div>
       </div>
@@ -348,23 +368,36 @@ function solarCross(dateStr,target){
 function raHM(x){ const h=Math.floor(x/15); return h+"h"+String(Math.round((x/15-h)*60)).padStart(2,"0")+"m"; }
 
 /* ---------------- ledger state ---------------------------------------------- */
-let DB=null, NIGHTS=[], WEATHER={}, CURRENT=null;
+let DB=null, NIGHTS=[], WEATHER={}, CURRENT=null, INCLUDE_MOCK=true;
+/* A pass = one complete visit in every survey filter. Tiles can be revisited
+   indefinitely; coverage is depth, not a done/not-done flag.
+   passes = min over filters of how many times that filter was taken. */
 function coverageMap(){
-  const m=new Map();
+  const raw=new Map();
   for(const n of NIGHTS){
     if(n.status!=="observed") continue;
     if((n.telescope||"visnjan")!==SCOPE) continue;
+    if(n.mock && !INCLUDE_MOCK) continue;
     for(const rec of (n.observed||[])){
       const id=typeof rec==="string"?rec:rec.id;
-      const f=typeof rec==="string"?2:(rec.filters?rec.filters.length:2);
-      m.set(id,Math.min(2,(m.get(id)||0)+f));
+      const fs=typeof rec==="string"?SPEC.filters:(rec.filters||SPEC.filters);
+      let e=raw.get(id); if(!e){ e={}; raw.set(id,e); }
+      for(const f of fs) e[f]=(e[f]||0)+1;
     }
   }
+  const m=new Map();
+  raw.forEach((c,id)=>{
+    const counts=SPEC.filters.map(f=>c[f]||0);
+    const passes=Math.min.apply(null,counts), most=Math.max.apply(null,counts);
+    m.set(id,{passes:passes, partial:most>passes, frames:counts.reduce((a,b)=>a+b,0)});
+  });
   return m;
 }
+function anyMock(){ return NIGHTS.some(n=>n.mock && n.status==="observed"
+  && (n.telescope||"visnjan")===SCOPE); }
 
 /* ---------------- night planning -------------------------------------------- */
-function planNight(dateStr,endHHMM,minAlt,expSec,effPct,moonKeep){
+function planNight(dateStr,endHHMM,minAlt,expSec,effPct,moonKeep,targetPass){
   const dusk=solarCross(dateStr,-18);
   if(!dusk) return {error:"No astronomical darkness on this date."};
   const end=localToUTC(dateStr,endHHMM,1);
@@ -382,7 +415,8 @@ function planNight(dateStr,endHHMM,minAlt,expSec,effPct,moonKeep){
   const elig=[];
   let blockedByMoon=0;
   for(const t of TILES){
-    if((covered.get(t.id)||0)>=2) continue;
+    const cv=covered.get(t.id);
+    if(cv && cv.passes>=targetPass) continue;
     const a=altOf(t.ra,t.dec,jdMid);
     if(a<minAlt) continue;
     const sep=angSep(t.ra,t.dec,mp.ra,mp.dec);
@@ -395,7 +429,7 @@ function planNight(dateStr,endHHMM,minAlt,expSec,effPct,moonKeep){
   let seed=elig[0], best=-1e9;
   for(const e of elig){
     let adj=0;
-    for(const nid of neighborsOf(e.t)) if((covered.get(nid)||0)>0) adj++;
+    for(const nid of neighborsOf(e.t)){ const c=covered.get(nid); if(c&&c.passes>0) adj++; }
     const score=e.alt+adj*12;
     if(score>best){ best=score; seed=e; }
   }
@@ -427,6 +461,7 @@ function planNight(dateStr,endHHMM,minAlt,expSec,effPct,moonKeep){
   return {dusk:dusk,end:end,windowMin:windowMin,capacity:capacity,tiles:tiles,
     jdMid:jdMid,candidates:elig.length,blockedByMoon:blockedByMoon,
     moon:{ra:mp.ra,dec:mp.dec,alt:mAlt,illum:mIll,up:moonUp,keep:moonKeep,minSep:minSep},
+    targetPass:targetPass,
     centre:{ra:seed.t.ra,dec:seed.t.dec},
     span:{dec:[Math.min.apply(null,decs),Math.max.apply(null,decs)],
           ra:[Math.min.apply(null,rels),Math.max.apply(null,rels)]},
@@ -485,7 +520,8 @@ function strokePath(points,style,width,dash){
 }
 
 function draw(){
-  const C={g0:css("--cov-0"),g1:css("--cov-1"),g2:css("--cov-2"),plan:css("--plan"),
+  const C={g0:css("--cov-0"),gp:css("--cov-p"),g1:css("--cov-1"),g2:css("--cov-2"),
+    g3:css("--cov-3"),plan:css("--plan"),
     grid:css("--grid"),dim:css("--ink-dim"),sky:css("--sky"),edge:css("--edge"),moon:css("--moon")};
   ctx.clearRect(0,0,W,H);
 
@@ -507,11 +543,14 @@ function draw(){
     const pts=[toScreen(t.ra-half,t.dec-hd),toScreen(t.ra+half,t.dec-hd),
                toScreen(t.ra+half,t.dec+hd),toScreen(t.ra-half,t.dec+hd)];
     if(!seamOK(pts)) continue;
-    const c=cov.get(t.id)||0;
+    const c=cov.get(t.id);
     ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
     for(let i=1;i<4;i++) ctx.lineTo(pts[i].x,pts[i].y);
     ctx.closePath();
-    ctx.fillStyle=(planSet&&planSet.has(t.id))?C.plan:(c>=2?C.g2:c===1?C.g1:C.g0);
+    let fill=C.g0;
+    if(c){ fill = c.passes>=3?C.g3 : c.passes===2?C.g2 : c.passes===1?C.g1
+                : (c.partial?C.gp:C.g0); }
+    ctx.fillStyle=(planSet&&planSet.has(t.id))?C.plan:fill;
     ctx.fill();
   }
 
@@ -582,12 +621,14 @@ cv.addEventListener("pointermove",e=>{
     if(d<bd){ bd=d; best=t; }
   }
   if(best&&bd<400){
-    const c=coverageMap().get(best.id)||0;
+    const c=coverageMap().get(best.id);
     let extra="";
     if(CURRENT&&CURRENT.moon) extra="<br>moon sep "+angSep(best.ra,best.dec,CURRENT.moon.ra,CURRENT.moon.dec).toFixed(0)+"°";
+    const depth = !c ? "no passes yet"
+      : c.passes===0 ? (c.partial?"partial pass ("+c.frames+" frames)":"no passes yet")
+      : c.passes+" pass"+(c.passes===1?"":"es")+(c.partial?" + partial":"")+", "+c.frames+" frames";
     ro.innerHTML="tile "+best.id+"<br>RA "+raHM(best.ra)+" &nbsp;Dec "+
-      (best.dec>=0?"+":"")+best.dec.toFixed(2)+"°<br>"+
-      (c>=2?"G + R complete":c===1?"one filter done":"not observed")+extra;
+      (best.dec>=0?"+":"")+best.dec.toFixed(2)+"°<br>"+depth+extra;
     ro.classList.add("on");
   } else ro.classList.remove("on");
 });
@@ -604,12 +645,25 @@ function renderSubline(){
 }
 function renderProgress(){
   const cov=coverageMap();
-  let done=0; cov.forEach(v=>{ if(v>=2) done++; });
-  el("pTiles").textContent=done.toLocaleString()+" / "+TILES.length.toLocaleString();
-  el("pArea").textContent=(done*TILE_AREA).toFixed(0)+" deg²";
   const minAlt=+(el("dAlt").value||40);
+  const target=+(el("dPass")?el("dPass").value:1)||1;
+  let atTarget=0, touched=0, deepest=0, sumP=0;
+  const depths=[];
+  cov.forEach(v=>{
+    touched++; depths.push(v.passes); sumP+=v.passes;
+    if(v.passes>=target) atTarget++;
+    if(v.passes>deepest) deepest=v.passes;
+  });
+  depths.sort((a,b)=>a-b);
+  const median=depths.length?depths[Math.floor(depths.length/2)]:0;
   const reachFloor=SITE.lat-(90-minAlt), reachCeil=SITE.lat+(90-minAlt);
   const reachable=TILES.filter(t=>t.dec>=reachFloor&&t.dec<=reachCeil).length;
+  el("pTilesK").textContent="Pass "+target+" coverage";
+  el("pNightsK").textContent="Nights to finish pass "+target;
+  el("pTiles").textContent=(reachable?(atTarget/reachable*100).toFixed(1):"0.0")+"%  ("+
+    atTarget.toLocaleString()+"/"+reachable.toLocaleString()+")";
+  el("pArea").textContent=(touched*TILE_AREA).toFixed(0)+" deg²";
+  el("pDepth").textContent=deepest+" / "+median+(anyMock()&&INCLUDE_MOCK?" ✱":"");
   el("cDec").textContent=(DEC_MIN>0?"+":"")+DEC_MIN+"° … "+(DEC_MAX>0?"+":"")+DEC_MAX+"°";
   el("cOptics").textContent=SPEC.scale?SPEC.optics.split(",")[0]+" · "+SPEC.scale+"\u2033/px":SPEC.optics;
   el("cFov").textContent=FOV_RA.toFixed(2)+"° × "+FOV_DEC.toFixed(2)+"° ("+TILE_AREA.toFixed(2)+" deg²)";
@@ -618,10 +672,10 @@ function renderProgress(){
     (reachCeil>=0?"+":"")+Math.min(reachCeil,90).toFixed(1)+"°";
   el("cUnreach").textContent=(TILES.length-reachable).toLocaleString()+" tiles";
   const per=CURRENT?CURRENT.tiles.length:230;
-  el("pNights").textContent=per>0?Math.ceil(Math.max(0,reachable-done)/per):"—";
+  el("pNights").textContent=per>0?Math.ceil(Math.max(0,reachable-atTarget)/per):"—";
 }
 function renderNight(p){
-  const ids=["nDark","nWin","nMoon","nSep","nCentre","nSpan","nTiles","nSlew"];
+  const ids=["nDark","nWin","nMoon","nSep","nCentre","nSpan","nPass","nTiles","nSlew"];
   if(!p||p.error){ ids.forEach(i=>el(i).textContent="—"); return; }
   el("nDark").textContent=fmtLocal(p.dusk);
   el("nWin").textContent=fmtLocal(p.dusk)+" → "+fmtLocal(p.end)+" ("+Math.round(p.windowMin)+"m)";
@@ -632,6 +686,7 @@ function renderNight(p){
   el("nCentre").textContent=raHM(p.centre.ra)+" "+(p.centre.dec>=0?"+":"")+p.centre.dec.toFixed(1)+"°";
   el("nSpan").textContent=(p.span.ra[1]-p.span.ra[0]).toFixed(1)+"° × "+
     (p.span.dec[1]-p.span.dec[0]).toFixed(1)+"°";
+  el("nPass").textContent="#"+p.targetPass;
   el("nTiles").textContent=p.tiles.length+" of "+p.candidates+" eligible";
   el("nSlew").textContent=p.medSlew.toFixed(2)+"°";
 }
@@ -661,16 +716,28 @@ function renderWeather(dateStr){
   });
   if(w.hours.length) labs.innerHTML="<span>"+w.hours[0].t+"</span><span>"+w.hours[w.hours.length-1].t+"</span>";
 }
+function renderMockBar(){
+  const mocks=NIGHTS.filter(n=>n.mock && n.status==="observed" && (n.telescope||"visnjan")===SCOPE);
+  const bar=el("mockBar");
+  bar.classList.toggle("on", mocks.length>0);
+  if(mocks.length){
+    const tiles=mocks.reduce((a,n)=>a+(n.observed||[]).length,0);
+    el("mockWhat").textContent=mocks.length+" simulated night"+(mocks.length===1?"":"s")+
+      ", "+tiles.toLocaleString()+" tile records — not real observations.";
+  }
+}
 function renderLog(){
   const wrap=el("logWrap");
   if(!NIGHTS.length){ wrap.innerHTML='<div class="empty">No nights recorded yet. Generate a plan and save it to start the ledger.</div>'; return; }
   const rows=NIGHTS.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(n=>{
     const col=n.status==="observed"?"--ok":n.status==="planned"?"--accent":"--ink-dim";
-    return "<tr><td>"+n.date+"</td><td><span class='tag' style='background:var(--accent-soft);color:var("+col+
-      ")'>"+n.status+"</span></td><td>"+((n.planned||[]).length)+"</td><td>"+((n.observed||[]).length)+
-      "</td><td>"+(n.note?String(n.note).slice(0,60):"")+"</td></tr>";
+    const tag=n.mock?"<span class='tag mock'>mock</span> ":"";
+    const pass=n.pass?("p"+n.pass):"—";
+    return "<tr><td>"+n.date+"</td><td>"+tag+"<span class='tag' style='background:var(--accent-soft);color:var("+col+
+      ")'>"+n.status+"</span></td><td>"+pass+"</td><td>"+((n.planned||[]).length)+"</td><td>"+((n.observed||[]).length)+
+      "</td><td>"+(n.note?String(n.note).slice(0,52):"")+"</td></tr>";
   }).join("");
-  wrap.innerHTML="<table><thead><tr><th>Night</th><th>Status</th><th>Planned</th><th>Observed</th><th>Note</th></tr></thead><tbody>"+rows+"</tbody></table>";
+  wrap.innerHTML="<table><thead><tr><th>Night</th><th>Status</th><th>Pass</th><th>Planned</th><th>Observed</th><th>Note</th></tr></thead><tbody>"+rows+"</tbody></table>";
 }
 
 /* ---------------- controls -------------------------------------------------- */
@@ -681,7 +748,8 @@ el("dDate").value=todayLocal();
 
 function doPlan(){
   const p=planNight(el("dDate").value,el("dEnd").value,+el("dAlt").value,
-                    +el("dExp").value,+el("dEff").value,+el("dMoon").value);
+                    +el("dExp").value,+el("dEff").value,+el("dMoon").value,
+                    Math.max(1,+el("dPass").value||1));
   if(p.error){ alert(p.error); return; }
   CURRENT=p;
   /* centre the view on the planned region */
@@ -694,10 +762,12 @@ el("dScope").addEventListener("change",()=>{
   el("dAlt").value=SPEC.minAlt; el("dEnd").value=SPEC.end; el("dExp").value=SPEC.exposure;
   el("bSave").disabled=true; el("bCsv").disabled=true;
   viewRA=180; viewDec=SITE.lat>=0?20:-20; zoom=1;
-  renderSubline(); renderNight(null); renderProgress(); renderWeather(el("dDate").value); draw();
+  renderSubline(); renderNight(null); renderProgress(); renderMockBar();
+  renderWeather(el("dDate").value); draw();
 });
 el("bPlan").addEventListener("click",doPlan);
 el("dAlt").addEventListener("change",renderProgress);
+el("dPass").addEventListener("change",renderProgress);
 el("dDate").addEventListener("change",()=>{ CURRENT=null;
   el("bSave").disabled=true; el("bCsv").disabled=true;
   renderNight(null); renderWeather(el("dDate").value); draw(); });
@@ -721,7 +791,7 @@ el("bCsv").addEventListener("click",()=>{
 el("bSave").addEventListener("click",()=>{
   if(!CURRENT) return;
   const date=el("dDate").value;
-  const doc={date:date,telescope:SCOPE,status:"planned",
+  const doc={date:date,telescope:SCOPE,status:"planned",pass:CURRENT.targetPass,
     planned:CURRENT.tiles.map(t=>t.id), observed:[],
     window:{dark:CURRENT.dusk.toISOString(),end:CURRENT.end.toISOString(),
             minutes:Math.round(CURRENT.windowMin)},
@@ -743,7 +813,12 @@ function saveText(name, text, mime){
 }
 
 /* ---------------- boot ------------------------------------------------------ */
-renderSubline(); renderProgress(); renderLog(); resize();
+renderSubline(); renderProgress(); renderLog(); renderMockBar(); resize();
+el("mockToggle").addEventListener("change",()=>{
+  INCLUDE_MOCK=el("mockToggle").checked;
+  CURRENT=null; el("bSave").disabled=true; el("bCsv").disabled=true;
+  renderNight(null); renderProgress(); draw();
+});
 window.addEventListener("resize",resize);
 if(window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener("change",draw);
 
@@ -761,7 +836,7 @@ if(window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListene
   note.textContent=cov?("Coverage loaded from data/coverage.json — "+n+" observed night"+(n===1?"":"s")+
       ". Update it by committing a new file to the repository."):
       "No data/coverage.json found — showing an empty survey.";
-  renderProgress(); renderLog(); renderWeather(el("dDate").value); draw();
+  renderProgress(); renderLog(); renderMockBar(); renderWeather(el("dDate").value); draw();
 })();
 
 })();

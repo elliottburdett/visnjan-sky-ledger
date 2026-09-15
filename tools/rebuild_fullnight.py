@@ -24,6 +24,14 @@ running, so leaving it up across a tile boundary costs two settles. Stopping it
 before the slew and starting it after the solve gives one, on the final
 pointing, covering both exposures. Both guider instructions continue on error:
 a field with no usable guide star should cost one unguided tile, not the night.
+
+--sun-altitude adds a Sun Altitude condition to the Targets container, so the
+list loops only while the sun is below the given altitude. NINA stores this as
+Comparator GREATER_THAN with the altitude in Offset, which reads backwards but
+is right: Check() fails when the current altitude is ABOVE the offset, so
+GREATER_THAN is the one that keeps the loop running while it is darker than the
+threshold. Conditions SKIP rather than wait, so this ends the night at dawn -
+waiting for dark at the start is the Start area's Wait For Time job.
 """
 import argparse, copy, json, sys
 from pathlib import Path
@@ -131,6 +139,8 @@ def main():
     ap.add_argument("--af-every", type=int, default=30)
     ap.add_argument("--name", default=None)
     ap.add_argument("--no-guide", dest="guide", action="store_false")
+    ap.add_argument("--sun-altitude", type=float, default=None,
+                    help="add a Sun Altitude condition, e.g. -18 for astronomical dark")
     a = ap.parse_args()
 
     plan = json.loads(Path(a.plan).read_text())
@@ -181,6 +191,26 @@ def main():
         out.append(panel(tile, k + 1))
     targets["Items"]["$values"] = out
 
+    if a.sun_altitude is not None:
+        conds = targets["Conditions"]["$values"]
+        conds[:] = [c for c in conds if "SunAltitudeCondition" not in c["$type"]]
+        conds.append({
+            "$id": nid(),
+            "$type": "NINA.Sequencer.Conditions.SunAltitudeCondition" + SEQ,
+            "Data": {
+                "$id": nid(),
+                "$type": "NINA.Sequencer.SequenceItem.Utility.WaitLoopData" + SEQ,
+                "Coordinates": {
+                    "$id": nid(),
+                    "$type": "NINA.Astrometry.InputCoordinates, NINA.Astrometry",
+                    "RAHours": 0, "RAMinutes": 0, "RASeconds": 0.0,
+                    "NegativeDec": False, "DecDegrees": 0, "DecMinutes": 0, "DecSeconds": 0.0},
+                "Offset": float(a.sun_altitude),
+                # 3 = GREATER_THAN; the enum serialises as an int, no
+                # StringEnumConverter in NINA's SequenceJsonConverter
+                "Comparator": 3},
+            "Parent": {"$ref": tid}})
+
     if a.name:
         doc["Name"] = a.name
     renumber(doc)
@@ -202,8 +232,10 @@ def main():
     dangling = [r for r in refs if r not in set(ids)]
     assert not dangling, f"dangling $ref: {dangling[:5]}"
     naf = sum(1 for x in targets["Items"]["$values"] if "RunAutofocus" in x["$type"])
+    names = [c["$type"].split(",")[0].rsplit(".", 1)[-1] for c in targets["Conditions"]["$values"]]
     print(f"{p}  —  {len(tiles)} tiles, {len(tiles)*2} exposures, {naf} autofocus runs, "
           f"guiding {'on' if a.guide else 'off'}, {len(ids)} unique ids, 0 dangling refs")
+    print(f"     Targets conditions: {', '.join(names)}")
 
 
 if __name__ == "__main__":

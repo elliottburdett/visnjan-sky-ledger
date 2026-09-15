@@ -22,10 +22,15 @@ previous one ended. A panel is one exposure:
     imaging TakeExposure
 
 Every SwitchFilter carries its own inline FilterInfo rather than a shared $ref.
-Panels carry NO conditions: in NINA a container with conditions REPEATS while
-they hold, so a per-panel condition makes each panel loop forever instead of
-advancing. Panel names encode the tile centre (RAhhmmss_Dec+ddmmss_F) so frames
-can be matched back to tiles from the header alone.
+Panel names encode the tile centre (RAhhmmss_Dec+ddmmss_F) so frames can be
+matched back to tiles from the header alone.
+
+Every panel is gated on safety and on the cutoff time. In NINA a container
+with conditions REPEATS while they hold, so a bare Safety Monitor or Time
+condition makes a panel loop forever instead of advancing. Each panel therefore
+pairs those two with a Loop condition of exactly one iteration; conditions are
+ANDed, so the panel runs once and is skipped outright if the sky has turned
+unsafe or too little time remains to finish it.
 
 Mirrors the generator in index.html exactly — keep the two in step.
 """
@@ -38,6 +43,24 @@ AF_BLOCK = 30                          # tiles per filter block = autofocus cade
 FILTER_POSITIONS = {"G": 2, "R": 1}   # verify against Options > Equipment > Filter Wheel
 
 _counter = 999
+def seed_counter(doc):
+    """Start our ids above anything the template already uses.
+
+    renumber() reassigns everything at the end, but it maps old id -> new id,
+    so a generated id that collides with a template id silently repoints that
+    template node's references."""
+    global _counter
+    top = [0]
+    def walk(o):
+        if isinstance(o, dict):
+            v = o.get("$id")
+            if isinstance(v, str) and v.isdigit(): top[0] = max(top[0], int(v))
+            for x in o.values(): walk(x)
+        elif isinstance(o, list):
+            for x in o: walk(x)
+    walk(doc)
+    _counter = max(_counter, top[0] + 1)
+
 def nid():
     global _counter
     _counter += 1
@@ -98,6 +121,22 @@ def autofocus(parent):
     return {"$id": nid(), "$type": "NINA.Sequencer.SequenceItem.Autofocus.RunAutofocus, NINA.Sequencer",
             "Parent": {"$ref": parent}, "ErrorBehavior": 0, "Attempts": 1}
 
+def panel_conditions(panel_id, end_hhmm):
+    """One iteration, safe skies, and time left to finish - ANDed by NINA.
+
+    The loop condition is what stops the other two from repeating the panel."""
+    hh, mm = (int(x) for x in end_hhmm.split(":"))
+    return [
+        {"$id": nid(), "$type": "NINA.Sequencer.Conditions.LoopCondition, NINA.Sequencer",
+         "CompletedIterations": 0, "Iterations": 1, "Parent": {"$ref": panel_id}},
+        {"$id": nid(), "$type": "NINA.Sequencer.Conditions.SafetyMonitorCondition, NINA.Sequencer",
+         "Parent": {"$ref": panel_id}},
+        {"$id": nid(), "$type": "NINA.Sequencer.Conditions.TimeCondition, NINA.Sequencer",
+         "Hours": hh, "Minutes": mm, "MinutesOffset": 0, "Seconds": 0,
+         "SelectedProvider": {"$id": nid(),
+             "$type": "NINA.Sequencer.Utility.DateTimeProvider.TimeProvider, NINA.Sequencer"},
+         "Parent": {"$ref": panel_id}}]
+
 def container(name, parent, items_fn):
     cid = nid(); items = items_fn(cid)
     return {"$id": cid, "$type": "NINA.Sequencer.Container.SequentialContainer, NINA.Sequencer",
@@ -106,7 +145,7 @@ def container(name, parent, items_fn):
             "Items": coll("item", items), "Triggers": coll("trig", []),
             "Parent": {"$ref": parent}, "ErrorBehavior": 0, "Attempts": 1}
 
-def panel(tile, targets_id, exp, filt):
+def panel(tile, targets_id, exp, filt, end_hhmm):
     dso = nid(); co = radec_parts(tile["ra"], tile["dec"])
     name = sex_name(tile["ra"], tile["dec"], filt)
 
@@ -142,7 +181,7 @@ def panel(tile, targets_id, exp, filt):
                              "ImageType": "LIGHT", "BinningX": 1, "BinningY": 1, "ROI": 1.0}]},
             "Strategy": {"$type": "NINA.Sequencer.Container.ExecutionStrategy.SequentialStrategy, NINA.Sequencer"},
             "Name": name,
-            "Conditions": coll("cond", []),      # deliberately empty - see module docstring
+            "Conditions": coll("cond", panel_conditions(dso, end_hhmm)),  # see module docstring
             "IsExpanded": False,
             "Items": coll("item", [container("Target preparation instructions", dso, prep),
                                    container("Target imaging instructions", dso, img)]),
@@ -200,6 +239,7 @@ def main():
 
     plan = json.loads(Path(a.plan).read_text())
     doc = json.loads(Path(a.template).read_text())
+    seed_counter(doc)
     by_id = {t["id"]: t for t in build_grid(plan.get("telescope", "visnjan"))}
     tiles = [by_id[i] for i in plan["planned"] if i in by_id]
     exp = float(plan.get("params", {}).get("expSec", EXP_TIME))
@@ -215,7 +255,7 @@ def main():
             items.append(autofocus(tid))
             # serpentine: odd filters retrace the block so the slew home is short
             for t in (reversed(chunk) if k % 2 else chunk):
-                items.append(panel(t, tid, exp, f))
+                items.append(panel(t, tid, exp, f, a.end))
     targets["Items"]["$values"] = items
     hh, mm = a.end.split(":")
     targets["Conditions"]["$values"] = [

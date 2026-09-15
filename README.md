@@ -131,9 +131,27 @@ and HFR triggers on the Targets container still run on top of that, catching
 drift inside a block. No guiding. Several details are deliberate and worth
 leaving alone:
 
-- **Panels carry no conditions.** In NINA a container with conditions *repeats*
-  while they hold true, so a per-panel condition pins the mount on one tile and
-  re-images it forever instead of advancing.
+- **Every panel carries three conditions**, and the third one is not optional:
+
+  | Condition | Iterations / value | What it does |
+  |---|---|---|
+  | Loop | 1 | lets the panel run exactly once |
+  | Safety Monitor | — | skips the panel unless the sky is safe |
+  | Time | the night's cutoff | skips the panel unless it can finish in time |
+
+  Conditions are ANDed, and NINA re-evaluates them before *every* instruction,
+  walking up the parent chain — so clouds arriving between the slew and the
+  exposure stop the panel before the shutter opens, and the cutoff cannot catch
+  a frame half-taken. The Loop condition is what makes this safe: in NINA a
+  container with conditions *repeats* while they hold true, so Safety Monitor
+  and Time on their own would pin the mount on one tile and re-image it forever
+  instead of advancing. Do not remove it. (A container with **no** conditions
+  falls back to `Iterations < 1`, which is why the earlier files worked.)
+
+  When a check fails, the same conditions on the Targets container fail too, so
+  the sequence leaves the target list and runs the End area — find home, close
+  cover, warm camera. Note that an unsafe reading and a *disconnected* safety
+  monitor are the same thing to NINA: `IsSafe = Connected && IsSafe`.
 - **Every Switch Filter carries its own inline `FilterInfo`** rather than a
   shared `$ref`. Sharing one filter object across hundreds of instructions is
   what made earlier files misbehave.

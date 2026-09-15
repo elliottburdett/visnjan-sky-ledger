@@ -183,14 +183,68 @@ drift inside a block. Several details are deliberate and worth leaving alone:
 **3. Reconcile.** Record what was actually taken, not what was planned:
 
 ```bash
-python tools/reconcile.py 2026-09-12 --fits /path/to/night/*.fits
+python tools/reconcile.py --fits "/path/to/2026-09-15/**/*.fits"
+python tools/reconcile.py --rebuild        # recompute coverage, ingest nothing
 ```
 
-Each frame is matched to its tile by coordinates. Tiles seen in both G and R
-become complete.
-
-**4. Commit.** `data/coverage.json` is the ledger. Committing it is what makes
+**4. Commit.** Committing `data/frames/` and `data/coverage.json` is what makes
 the survey's history reproducible and the coverage map update.
+
+### Where the observed data comes from
+
+N.I.N.A. keeps no observation database. Its own logs live in
+`%LOCALAPPDATA%\NINA\Logs\<date>-<version>.<pid>-.log` and are Serilog
+diagnostics — `timestamp|LEVEL|source|member|line|message`, rolled monthly.
+They will tell you *why* a night went wrong, and they are the first thing to
+read after a failure, but they are prose about events, not a catalogue of
+frames. Do not parse them for coverage.
+
+The record N.I.N.A. does keep is the FITS header on every frame it writes:
+
+| Keyword | Holds |
+|---|---|
+| `OBJECT` | the panel name from the sequence |
+| `OBJCTRA` / `OBJCTDEC` | the **target** coordinates, sexagesimal — the tile centre |
+| `RA` / `DEC` | where the mount actually was, in degrees |
+| `CRVAL1` / `CRVAL2` | solved centre — only on plate-solved frames |
+| `FILTER`, `DATE-OBS`, `EXPOSURE`, `IMAGETYP` | the rest of what a frame needs to be identified |
+| `CENTALT`, `AIRMASS`, `FOCALLEN`, `INSTRUME`, `TELESCOP` | conditions and gear |
+
+`reconcile.py` trusts them in that order: solved WCS, then the target
+coordinates, then the mount. This is the argument for the blocks scheme's
+coordinate-encoded panel names — a frame whose `OBJECT` reads
+`RA221235_Dec+300000_G` is matched to its tile **exactly**, with no
+nearest-neighbour search and no tolerance to tune. `T001` names fall back to
+matching by coordinates within `--tol` degrees, which works but is guesswork
+when the mount was off.
+
+Setting N.I.N.A.'s file-name pattern to include `$$DATEMINUS12$$`,
+`$$TARGETNAME$$` and `$$FILTER$$` puts the same facts in the path, so even a
+directory listing is a usable record if the headers are ever lost.
+
+### How it is stored
+
+Two layers, and the distinction is the point:
+
+```
+data/frames/frames_<date>_<telescope>.csv   RAW, append-only — one row per exposure
+data/coverage.json                          DERIVED — rebuilt from the above
+```
+
+The frame files are the thing to back up. Everything in `coverage.json` can be
+deleted and regenerated with `--rebuild`, so a bad tile match, a changed grid,
+or a new definition of "complete" is a re-run rather than a loss. Re-ingesting
+the same night is safe: frames are deduplicated on
+(`DATE-OBS`, filter, RA, Dec), so pointing `--fits` at a whole season only adds
+what is missing.
+
+Nights are split by **observing date** — UTC minus 12 hours, matching
+N.I.N.A.'s `$$DATEMINUS12$$` — so one night's frames share one file even
+though they straddle midnight. Pass the date positionally to override it.
+
+`data/mock/` frame files are read by the same rebuild and flagged `"mock":
+true`, which is what the planner's `--no-mock` and the page's synthetic-data
+toggle key off.
 
 ## Simulated nights
 
@@ -234,7 +288,8 @@ User-Agent.
 
 ```
 index.html            planner + coverage map (static; GitHub Pages)
-data/coverage.json    the ledger — observed tiles per night, per telescope
+data/coverage.json    DERIVED ledger — observed tiles per night, per telescope
+data/frames/          RAW frame lists from NINA's FITS headers — back this up
 data/mock/            synthetic frame lists (delete to purge simulated data)
 data/weather.json     forecast snapshots
 data/nights/          one plan per night
@@ -242,7 +297,7 @@ tools/grid.py         telescope table + tile grids; the JS in index.html mirrors
 tools/plan_night.py   headless planner (--pass N, --no-mock)
 tools/mock_observe.py simulated observations for testing the loop
 tools/build_sequence.py   plan -> NINA Advanced Sequencer file
-tools/reconcile.py    frames -> coverage
+tools/reconcile.py    NINA FITS headers -> data/frames/ -> coverage (--rebuild)
 tools/fetch_weather.py    met.no -> weather.json
 templates/            your NINA sequence, used as the Start/End donor
 sequences/            generated NINA files

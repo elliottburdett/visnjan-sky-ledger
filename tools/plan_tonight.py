@@ -77,6 +77,9 @@ def main():
     ap.add_argument("--moon-keepout", type=float, default=30)
     ap.add_argument("--exp", type=float, default=30)
     ap.add_argument("--settle", type=float, default=10)
+    ap.add_argument("--settles-per-tile", type=float, default=2,
+                    help="2 when each filter is its own panel, 1 when both "
+                         "exposures sit under one guide session")
     ap.add_argument("--efficiency", type=float, default=100)
     ap.add_argument("--af-block", type=int, default=30,
                     help="trim the tile count to a whole number of filter blocks")
@@ -123,7 +126,9 @@ def main():
     if m_alt > -2 and a.moon_keepout > 0:
         base &= sep >= a.moon_keepout
 
-    per_tile = 2 * (a.exp + a.settle) / (a.efficiency / 100)      # two panels per tile
+    # two exposures per tile; guiding settles once per panel, and how many
+    # panels a tile becomes depends on the sequence scheme
+    per_tile = (2 * a.exp + a.settles_per_tile * a.settle) / (a.efficiency / 100)
     capacity = int(window_min * 60 / per_tile)
 
     used = np.zeros(len(tiles), bool)
@@ -172,7 +177,8 @@ def main():
            "planned": [tiles[i]["id"] for i in order], "observed": [],
            "window": {"dark": dusk.isot + "Z", "end": end.isot + "Z", "minutes": round(window_min)},
            "params": {"expSec": a.exp, "minAlt": min_alt, "efficiency": a.efficiency,
-                      "moonKeepOut": a.moon_keepout, "guide": True, "settleSec": a.settle},
+                      "moonKeepOut": a.moon_keepout, "guide": True, "settleSec": a.settle,
+                      "settlesPerTile": a.settles_per_tile},
            "moon": {"illum": round(float(illum), 3), "alt": round(float(m_alt), 1),
                     "minSep": round(float(sep[order].min()), 1)},
            "region": {"centreRa": round(float(np.mean(ra[order])), 4),

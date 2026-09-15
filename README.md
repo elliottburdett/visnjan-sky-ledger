@@ -222,6 +222,23 @@ Setting N.I.N.A.'s file-name pattern to include `$$DATEMINUS12$$`,
 `$$TARGETNAME$$` and `$$FILTER$$` puts the same facts in the path, so even a
 directory listing is a usable record if the headers are ever lost.
 
+### Loading frames from the page
+
+The **Download NINA .json** button sends a plan *out* to the mount. **Observed
+frames → Load frames…** reads what came *back*: point it at the night's files
+(or at a `frames_*.csv`) and the coverage map, the pass counts and the next
+plan account for them immediately.
+
+Only each file's header is read — `File.slice()` never touches the pixel data —
+so a folder of 50 MB frames costs a few hundred kilobytes, and nothing is
+uploaded anywhere; the parsing happens in the tab. Tile matching is identical
+to `reconcile.py`, exact-by-panel-name included, and the two have been checked
+to produce the same tile/filter map frame for frame.
+
+It is **session-local**. **Download coverage.json** writes the merged ledger for
+committing, but the page cannot keep the per-frame record — for that, and for
+anything permanent, use `reconcile.py`.
+
 ### How it is stored
 
 Two layers, and the distinction is the point:

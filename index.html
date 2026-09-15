@@ -200,6 +200,22 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
           <button id="bCsv" disabled>Export CSV</button>
           <button id="bNina" disabled>Download NINA .json</button>
         </div>
+        <p class="note" style="margin-top:8px">These send a plan <em>out</em> to the
+          mount. To feed back what was actually observed, use Observed frames below.</p>
+      </div>
+
+      <div class="sect">
+        <h2>Observed frames</h2>
+        <p class="note">Point this at the night's files — or its
+          <code>frames_*.csv</code> — and the coverage map and the next plan
+          account for them straight away. Only each file's header is read, so a
+          folder of 50&nbsp;MB frames costs a few hundred kilobytes.</p>
+        <div class="btnrow" style="margin-top:9px">
+          <button id="bLoad">Load frames…</button>
+          <button id="bCovDl" disabled>Download coverage.json</button>
+        </div>
+        <input type="file" id="fFrames" multiple accept=".fits,.fit,.fts,.fz,.csv" hidden>
+        <p class="note" id="loadNote" style="margin-top:8px">Nothing loaded this session.</p>
       </div>
 
       <div class="sect">
@@ -289,13 +305,16 @@ function buildGrid(){
   return tiles;
 }
 let TILES=buildGrid();
+let TILE_BY_ID=new Map();
+function indexTiles(){ TILE_BY_ID=new Map(TILES.map(t=>[t.id,t])); }
+indexTiles();
 
 function setScope(key){
   SCOPE=key; SPEC=TELESCOPES[key]; SITE=SPEC.site;
   FOV_RA=SPEC.fovRa; FOV_DEC=SPEC.fovDec; OVERLAP=SPEC.overlap;
   STEP_RA=FOV_RA*(1-OVERLAP); STEP_DEC=FOV_DEC*(1-OVERLAP);
   DEC_MIN=SPEC.decMin; DEC_MAX=SPEC.decMax; TILE_AREA=STEP_RA*STEP_DEC;
-  TILES=buildGrid(); CURRENT=null;
+  TILES=buildGrid(); indexTiles(); CURRENT=null;
 }
 
 const D2R=Math.PI/180, R2D=180/Math.PI;
@@ -733,6 +752,216 @@ function renderMockBar(){
       ", "+tiles.toLocaleString()+" tile records — not real observations.";
   }
 }
+/* ---- observed frames in ----------------------------------------------------
+   The buttons above send a plan OUT to the mount. This reads what came BACK.
+
+   N.I.N.A. keeps no observation database - its logs are Serilog diagnostics -
+   but it writes a full FITS header on every frame. Pointing is trusted in this
+   order: solved WCS (CRVAL1/2), then the target coordinates (OBJCTRA/OBJCTDEC),
+   then where the mount actually was (RA/DEC). A frame whose OBJECT reads
+   RA221235_Dec+300000_G is matched to its tile exactly, no search and no
+   tolerance; anything else falls back to the nearest tile within TOL.
+
+   Only the header of each file is read - file.slice() never touches the pixel
+   data - so this stays cheap on a night of large frames. Nothing is uploaded
+   anywhere: the parsing happens in this tab. It is also session-local, so
+   Download coverage.json is what makes it permanent, and tools/reconcile.py
+   remains the durable path that also keeps the raw per-frame record. */
+const FITS_BLOCK=2880, FITS_MAX_BLOCKS=128, MATCH_TOL=0.4;
+const TILE_NAME=/^RA(\d\d)(\d\d)(\d\d)_Dec([+-])(\d\d)(\d\d)(\d\d)_([A-Za-z]+)$/;
+let COV_META={}, LOADED=0;
+
+function fitsCards(text){
+  const h={};
+  for(let i=0;i+80<=text.length;i+=80){
+    const card=text.slice(i,i+80);
+    const key=card.slice(0,8).trim();
+    if(key==="END") return {h:h,done:true};
+    if(card[8]!=="=") continue;
+    let v=card.slice(9).trim();
+    if(v.charAt(0)==="'"){
+      const end=v.indexOf("'",1);
+      v=(end<0?v.slice(1):v.slice(1,end)).trim();
+    }else{
+      const c=v.indexOf("/");
+      if(c>=0) v=v.slice(0,c).trim();
+    }
+    h[key]=v;
+  }
+  return {h:h,done:false};
+}
+async function readFitsHeader(file){
+  let blocks=6, res={h:{},done:false};
+  while(blocks<=FITS_MAX_BLOCKS){
+    const buf=await file.slice(0,FITS_BLOCK*blocks).arrayBuffer();
+    res=fitsCards(new TextDecoder("latin1").decode(buf));
+    if(res.done||buf.byteLength<FITS_BLOCK*blocks) break;
+    blocks*=2;
+  }
+  return res.h;
+}
+function sexa(v){
+  if(v==null) return null;
+  const t=String(v).trim();
+  const parts=t.split(/[\s:]+/).filter(x=>x!==""&&x!=="+"&&x!=="-");
+  if(!parts.length) return null;
+  const n=parts.map(Number);
+  if(n.some(function(x){return isNaN(x);})) return null;
+  const mag=Math.abs(n[0])+(n[1]||0)/60+(n[2]||0)/3600;
+  return (t.charAt(0)==="-"?-1:1)*mag;
+}
+function frameFromHeader(h){
+  const type=String(h["IMAGETYP"]||"LIGHT").toUpperCase();
+  if(type!=="LIGHT"&&type!=="OBJECT"&&type!=="") return null;
+  let ra=null,dec=null,src="";
+  if(h["CRVAL1"]!=null&&h["CRVAL2"]!=null){ ra=+h["CRVAL1"]; dec=+h["CRVAL2"]; src="wcs"; }
+  else if(h["OBJCTRA"]!=null&&h["OBJCTDEC"]!=null){
+    const rh=sexa(h["OBJCTRA"]), dd=sexa(h["OBJCTDEC"]);
+    if(rh!=null&&dd!=null){ ra=rh*15; dec=dd; src="target"; }
+  }
+  if(ra==null&&h["RA"]!=null&&h["DEC"]!=null){ ra=+h["RA"]; dec=+h["DEC"]; src="mount"; }
+  if(ra==null||isNaN(ra)||isNaN(dec)) return null;
+  return {ra:ra,dec:dec,filter:String(h["FILTER"]||"").trim(),
+          dateObs:String(h["DATE-OBS"]||"").trim(),
+          object:String(h["OBJECT"]||"").trim(),source:src};
+}
+function parseFramesCsv(text){
+  const lines=text.split(/\r?\n/).filter(l=>l.trim()&&!l.trim().startsWith("#"));
+  if(!lines.length) return [];
+  const head=lines[0].split(",").map(x=>x.trim());
+  const ix=n=>head.indexOf(n);
+  const iRa=ix("ra_deg"), iDec=ix("dec_deg"), iF=ix("filter");
+  if(iRa<0||iDec<0||iF<0) return [];
+  const iD=ix("date_obs"), iO=ix("object"), iM=ix("mock");
+  const out=[];
+  for(let k=1;k<lines.length;k++){
+    const c=lines[k].split(",");
+    const ra=parseFloat(c[iRa]), dec=parseFloat(c[iDec]);
+    if(isNaN(ra)||isNaN(dec)) continue;
+    out.push({ra:ra,dec:dec,filter:(c[iF]||"").trim(),
+              dateObs:iD>=0?(c[iD]||"").trim():"",
+              object:iO>=0?(c[iO]||"").trim():"",
+              source:"csv", mock:iM>=0&&(c[iM]||"").trim()==="1"});
+  }
+  return out;
+}
+/* rows are constant declination, so the tile lookup is arithmetic, not a scan */
+function nearestTile(ra,dec){
+  const r0=Math.round((dec-DEC_MIN)/STEP_DEC);
+  let best=null,bd=1e9;
+  for(let r=r0-1;r<=r0+1;r++){
+    const n=ROW_N[r]; if(!n) continue;
+    const c=((Math.round(ra/360*n)%n)+n)%n;
+    for(const cc of [c,(c+1)%n,(c-1+n)%n]){
+      const t=TILE_BY_ID.get(r+"_"+cc); if(!t) continue;
+      const d=angSep(ra,dec,t.ra,t.dec);
+      if(d<bd){ bd=d; best=t; }
+    }
+  }
+  return {tile:best,d:bd};
+}
+function tileForFrame(fr){
+  let ra=fr.ra, dec=fr.dec, exact=false;
+  const m=TILE_NAME.exec(fr.object||"");
+  if(m){
+    ra=(+m[1]+(+m[2])/60+(+m[3])/3600)*15;
+    dec=(+m[5]+(+m[6])/60+(+m[7])/3600)*(m[4]==="-"?-1:1);
+    exact=true;
+  }
+  const n=nearestTile(ra,dec);
+  return (n.tile&&n.d<=MATCH_TOL)?{id:n.tile.id,exact:exact}:null;
+}
+/* UTC minus 12h, so one night is one date across midnight - NINA's $$DATEMINUS12$$ */
+function eveningDate(iso){
+  if(!iso) return null;
+  const t=Date.parse(/[Zz]|[+-]\d\d:?\d\d$/.test(iso)?iso:iso+"Z");
+  if(isNaN(t)) return null;
+  return new Date(t-12*3600e3).toISOString().slice(0,10);
+}
+
+async function ingestFiles(files){
+  const note=el("loadNote");
+  const keep=new Set(SPEC.filters);
+  const frames=[]; let noHeader=0, unreadable=0;
+  for(let i=0;i<files.length;i++){
+    if(i%20===0){
+      note.textContent="Reading "+(i+1)+" of "+files.length+"…";
+      await new Promise(r=>setTimeout(r,0));
+    }
+    const f=files[i];
+    try{
+      if(/\.csv$/i.test(f.name)){
+        for(const r of parseFramesCsv(await f.text())) frames.push(r);
+      }else{
+        const fr=frameFromHeader(await readFitsHeader(f));
+        if(fr) frames.push(fr); else noHeader++;
+      }
+    }catch(e){ unreadable++; }
+  }
+  const wrongFilter=frames.filter(f=>!keep.has(f.filter)).length;
+  const usable=frames.filter(f=>keep.has(f.filter));
+  if(!usable.length){
+    note.textContent="No usable frames — needs a pointing and a filter in "+
+      SPEC.filters.join("/")+". "+files.length+" file"+(files.length===1?"":"s")+" read.";
+    return;
+  }
+  const byDate=new Map();
+  let unmatched=0, exact=0, undated=0;
+  for(const fr of usable){
+    const t=tileForFrame(fr);
+    if(!t){ unmatched++; continue; }
+    if(t.exact) exact++;
+    const d=eveningDate(fr.dateObs);
+    if(!d) undated++;
+    const key=d||el("dDate").value;
+    let g=byDate.get(key); if(!g){ g={tiles:new Map(),n:0,mock:false}; byDate.set(key,g); }
+    g.n++; if(fr.mock) g.mock=true;
+    const arr=g.tiles.get(t.id)||[]; arr.push(fr.filter); g.tiles.set(t.id,arr);
+  }
+  const need=new Set(SPEC.filters);
+  let nights=0, tiles=0;
+  byDate.forEach((g,date)=>{
+    const observed=[...g.tiles.entries()].sort((a,b)=>a[0].localeCompare(b[0]))
+      .map(([id,fs])=>({id:id,filters:fs.slice().sort()}));
+    const complete=observed.filter(o=>[...need].every(f=>o.filters.indexOf(f)>=0)).length;
+    NIGHTS=NIGHTS.filter(n=>!(n.date===date&&(n.telescope||"visnjan")===SCOPE));
+    const rec={date:date,telescope:SCOPE,status:"observed",pass:1,
+      planned:[],observed:observed,frames:g.n,source:"browser upload",
+      uploaded:true,
+      note:(g.mock?"SYNTHETIC — ":"")+g.n+" frames, "+observed.length+
+           " tiles touched, "+complete+" complete in "+SPEC.filters.join("+")};
+    if(g.mock) rec.mock=true;
+    NIGHTS.push(rec); nights++; tiles+=observed.length;
+  });
+  NIGHTS.sort((a,b)=>a.date.localeCompare(b.date)||String(a.telescope).localeCompare(String(b.telescope)));
+  LOADED+=usable.length-unmatched;
+
+  const bits=[usable.length+" frames over "+nights+" night"+(nights===1?"":"s")+
+              ", "+tiles.toLocaleString()+" tiles"];
+  if(exact) bits.push(exact+" matched exactly by panel name");
+  if(unmatched) bits.push(unmatched+" matched no tile within "+MATCH_TOL+"°");
+  if(wrongFilter) bits.push(wrongFilter+" skipped on filter");
+  if(noHeader) bits.push(noHeader+" had no usable header");
+  if(unreadable) bits.push(unreadable+" unreadable");
+  if(undated) bits.push(undated+" had no DATE-OBS, filed under the date above");
+  note.textContent=bits.join(" · ")+". Session only — download coverage.json to keep it.";
+  el("bCovDl").disabled=false;
+  CURRENT=null;
+  el("bSave").disabled=true; el("bCsv").disabled=true; el("bNina").disabled=true;
+  renderNight(null); renderProgress(); renderLog(); renderMockBar(); draw();
+}
+
+el("bLoad").addEventListener("click",()=>el("fFrames").click());
+el("fFrames").addEventListener("change",async e=>{
+  const files=[...e.target.files];
+  e.target.value="";
+  if(files.length) await ingestFiles(files);
+});
+el("bCovDl").addEventListener("click",()=>{
+  const doc=Object.assign({},COV_META,{nights:NIGHTS});
+  saveText("coverage.json", JSON.stringify(doc,null,2), "application/json");
+});
+
 function renderLog(){
   const wrap=el("logWrap");
   if(!NIGHTS.length){ wrap.innerHTML='<div class="empty">No nights recorded yet. Generate a plan and save it to start the ledger.</div>'; return; }
@@ -1064,7 +1293,10 @@ if(window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListene
   }
   const cov=await grab("data/coverage.json");
   const wx =await grab("data/weather.json");
-  if(cov&&Array.isArray(cov.nights)) NIGHTS=cov.nights;
+  if(cov&&Array.isArray(cov.nights)){
+    NIGHTS=cov.nights;
+    COV_META=Object.assign({},cov); delete COV_META.nights;
+  }
   if(wx) WEATHER=wx;
   const n=NIGHTS.filter(x=>x.status==="observed").length;
   note.textContent=cov?("Coverage loaded from data/coverage.json — "+n+" observed night"+(n===1?"":"s")+

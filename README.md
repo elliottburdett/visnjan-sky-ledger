@@ -120,7 +120,7 @@ Targets
 and a panel is a single `DeepSkyObjectContainer` holding one exposure:
 
 ```
-Target preparation   Slew to Ra/Dec (abort on error) → Center (abort on error)
+Target preparation   Stop Guiding → Slew to Ra/Dec (abort) → Center (abort) → Start Guiding
 Target imaging       expose
 ```
 
@@ -128,8 +128,7 @@ The filter wheel therefore moves twice per block rather than twice per panel,
 and focus is re-measured on every filter change — which is where focus actually
 moves, since G and R do not come to focus in the same place. The temperature
 and HFR triggers on the Targets container still run on top of that, catching
-drift inside a block. No guiding. Several details are deliberate and worth
-leaving alone:
+drift inside a block. Several details are deliberate and worth leaving alone:
 
 - **Every panel carries three conditions**, and the third one is not optional:
 
@@ -160,6 +159,18 @@ leaving alone:
   mislabelled data, which is worse than a stopped sequence.
 - The explicit **Slew** runs before Center rather than relying on Center to move
   the mount.
+- **Guiding is stopped and restarted explicitly around the slew.** Slew and
+  Center each stop the guider and restart it themselves if it was running, so
+  leaving it up across a panel boundary costs *two* settles per panel. Stopping
+  it before the slew and starting it after the solve gives exactly one, on the
+  final pointing. Both guider instructions continue on error — a field with no
+  usable guide star should cost one unguided sub, not the night.
+- **Settle time is part of the plan, not a surprise.** The planner budgets
+  `2 × (exposure + settle)` per tile, so the **Settle (s)** box has to match
+  what PHD2 actually takes or the night will overrun. Set **Guide each panel**
+  to *No* to drop the instructions and the settle budget together; the headless
+  builder reads the same choice from the plan's `params.guide`, or takes
+  `--no-guide`.
 - **Every second filter block retraces its tiles in reverse**, so the mount
   starts each block from where it finished the last one instead of driving back
   across the whole region.

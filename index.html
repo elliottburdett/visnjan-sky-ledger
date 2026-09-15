@@ -189,6 +189,11 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
           <label class="fld"><span>Efficiency %</span><input type="number" id="dEff" value="100" min="20" max="100" step="5"></label>
           <label class="fld"><span>Build pass #</span><input type="number" id="dPass" value="1" min="1" max="20" step="1"></label>
         </div>
+        <div class="two">
+          <label class="fld"><span>Guide each panel</span><select id="dGuide">
+            <option value="1" selected>Yes</option><option value="0">No</option></select></label>
+          <label class="fld"><span>Settle (s)</span><input type="number" id="dSettle" value="10" min="0" max="120" step="1"></label>
+        </div>
         <div class="btnrow">
           <button class="primary" id="bPlan">Generate plan</button>
           <button id="bSave" disabled>Download plan JSON</button>
@@ -398,14 +403,15 @@ function anyMock(){ return NIGHTS.some(n=>n.mock && n.status==="observed"
   && (n.telescope||"visnjan")===SCOPE); }
 
 /* ---------------- night planning -------------------------------------------- */
-function planNight(dateStr,endHHMM,minAlt,expSec,effPct,moonKeep,targetPass){
+function planNight(dateStr,endHHMM,minAlt,expSec,effPct,moonKeep,targetPass,settleSec){
   const dusk=solarCross(dateStr,-18);
   if(!dusk) return {error:"No astronomical darkness on this date."};
   const end=localToUTC(dateStr,endHHMM,1);
   const windowMin=(end-dusk)/60000;
   if(windowMin<=0) return {error:"End time falls before astronomical dark."};
 
-  const perTile=2*expSec/(effPct/100);
+  /* two panels per tile, and guiding re-settles on each of them */
+  const perTile=2*(expSec+(settleSec||0))/(effPct/100);
   const capacity=Math.max(0,Math.floor(windowMin*60/perTile));
   const covered=coverageMap();
   const jdMid=jdOf(new Date(dusk.getTime()+(end-dusk)/2));
@@ -750,11 +756,20 @@ const NINA_TEMPLATE={"start":{"$id":"4","$type":"NINA.Sequencer.Container.StartA
    by a standalone RunAutofocus, then one DeepSkyObjectContainer per tile
    holding a single exposure. Every second filter walks the same tiles in
    reverse, so the mount starts the next block where it finished the last.
+   With guiding on, each panel stops the guider, slews, solves, and starts it
+   again on the final pointing - one settle per panel rather than the two you
+   get by leaving it running (see stopGuiding/startGuiding below).
    Panel names carry the coordinates (RAhhmmss_Dec+ddmmss_F) so frames can be
-   matched back to tiles without a side-car file. Panels carry NO conditions:
-   a container with conditions repeats while they hold, which is what used to
-   pin the mount on one tile. Targets opens with WaitUntilSafe; Start and End
-   areas are your own observatory blocks, copied verbatim. */
+   matched back to tiles without a side-car file.
+
+   Every panel is gated on safety and on the cutoff time. NINA repeats an
+   instruction set for as long as its conditions hold, which is what used to
+   pin the mount on one tile — so each panel pairs its Safety Monitor and Time
+   conditions with a Loop condition of exactly one iteration. Conditions are
+   ANDed, so the panel runs once and is skipped outright if the sky has turned
+   unsafe or the remaining time is too short for it. Targets opens with
+   WaitUntilSafe; Start and End areas are your own observatory blocks, copied
+   verbatim. */
 const AF_BLOCK = 30;          /* tiles per filter block, i.e. autofocus cadence */
 let _nid = 10000;
 function nid(){ return String(_nid++); }
@@ -796,6 +811,34 @@ function filterInfo(name,pos){
       "Gain":-1,"Offset":-1,"Binning":binning()},
     "_autoFocusBinning":binning(),"_autoFocusGain":-1,"_autoFocusOffset":-1};
 }
+/* One iteration, safe skies, and time left to finish - ANDed by NINA.
+   The loop condition is what keeps the other two from repeating the panel. */
+function panelConditions(panelId,hh,mm){
+  return [
+    {"$id":nid(),"$type":"NINA.Sequencer.Conditions.LoopCondition"+T_SEQ,
+     "CompletedIterations":0,"Iterations":1,"Parent":{"$ref":panelId}},
+    {"$id":nid(),"$type":"NINA.Sequencer.Conditions.SafetyMonitorCondition"+T_SEQ,
+     "Parent":{"$ref":panelId}},
+    {"$id":nid(),"$type":"NINA.Sequencer.Conditions.TimeCondition"+T_SEQ,
+     "Hours":hh,"Minutes":mm,"MinutesOffset":0,"Seconds":0,
+     "SelectedProvider":{"$id":nid(),"$type":"NINA.Sequencer.Utility.DateTimeProvider.TimeProvider"+T_SEQ},
+     "Parent":{"$ref":panelId}}];
+}
+function guideOn(){ return el("dGuide").value==="1"; }
+/* Slew and Center each stop guiding and restart it themselves if it was
+   running, so leaving the guider up across a panel boundary costs two settles
+   instead of one. Stopping it explicitly before the slew and starting it again
+   after the solve gives exactly one settle, on the final pointing. Both are
+   continue-on-error: a field with no usable guide star should cost one
+   unguided sub, not the night. */
+function stopGuiding(parentId){
+  return {"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.Guider.StopGuiding"+T_SEQ,
+    "Parent":{"$ref":parentId},"ErrorBehavior":0,"Attempts":1};
+}
+function startGuiding(parentId){
+  return {"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.Guider.StartGuiding"+T_SEQ,
+    "ForceCalibration":false,"Parent":{"$ref":parentId},"ErrorBehavior":0,"Attempts":1};
+}
 function seqContainer(name,parentId,items){
   const cid=nid();
   return {"$id":cid,"$type":"NINA.Sequencer.Container.SequentialContainer"+T_SEQ,
@@ -803,15 +846,20 @@ function seqContainer(name,parentId,items){
     "Items":coll("item",items(cid)),"Triggers":coll("trig",[]),
     "Parent":{"$ref":parentId},"ErrorBehavior":0,"Attempts":1};
 }
-function ninaPanel(tile,targetsId,expSec,filt){
+function ninaPanel(tile,targetsId,expSec,filt,hh,mm,guide){
   const dso=nid(), name=sexName(tile.ra,tile.dec,filt);
-  const prep = seqContainer("Target preparation instructions",dso,pid=>[
-    {"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.Telescope.SlewScopeToRaDec"+T_SEQ,
+  const prep = seqContainer("Target preparation instructions",dso,pid=>{
+    const out=[];
+    if(guide) out.push(stopGuiding(pid));
+    out.push({"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.Telescope.SlewScopeToRaDec"+T_SEQ,
      "Inherited":false,"Coordinates":coordsOf(tile.ra,tile.dec),
-     "Parent":{"$ref":pid},"ErrorBehavior":1,"Attempts":2},
-    {"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.Platesolving.Center"+T_SEQ,
+     "Parent":{"$ref":pid},"ErrorBehavior":1,"Attempts":2});
+    out.push({"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.Platesolving.Center"+T_SEQ,
      "Inherited":false,"Coordinates":coordsOf(tile.ra,tile.dec),
-     "Parent":{"$ref":pid},"ErrorBehavior":1,"Attempts":3}]);
+     "Parent":{"$ref":pid},"ErrorBehavior":1,"Attempts":3});
+    if(guide) out.push(startGuiding(pid));
+    return out;
+  });
   /* no SwitchFilter in here - the block already selected the filter */
   const img = seqContainer("Target imaging instructions",dso,iid=>[
     {"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.Imaging.TakeExposure"+T_SEQ,
@@ -829,7 +877,7 @@ function ninaPanel(tile,targetsId,expSec,filt){
         "Count":1,"Filter":filt,"ExposureTime":expSec,"Gain":101,"Offset":30,
         "ImageType":"LIGHT","BinningX":1,"BinningY":1,"ROI":1.0}]},
     "Strategy":strategy(),"Name":name,
-    "Conditions":coll("cond",[]),            /* empty on purpose - see header */
+    "Conditions":coll("cond",panelConditions(dso,hh,mm)),   /* see header */
     "IsExpanded":false,
     "Items":coll("item",[prep,img]),
     "Triggers":coll("trig",[]),
@@ -867,6 +915,8 @@ function buildNina(plan,dateStr,endHHMM){
   const positions=SPEC.filterPositions, filters=SPEC.filters;
   const exp=+el("dExp").value||SPEC.exposure;
   const rootId="1", targetsId=nid();
+  const [hh,mm]=endHHMM.split(":").map(Number);
+  const guide=guideOn();
   /* Targets opens by waiting for safe conditions, then runs filter blocks:
      SwitchFilter -> RunAutofocus -> AF_BLOCK panels, one exposure each.     */
   const items=[{"$id":nid(),"$type":"NINA.Sequencer.SequenceItem.SafetyMonitor.WaitUntilSafe"+T_SEQ,
@@ -881,10 +931,9 @@ function buildNina(plan,dateStr,endHHMM){
         "Parent":{"$ref":targetsId},"ErrorBehavior":0,"Attempts":1});
       /* serpentine: odd filters retrace the block so the slew home is short */
       const order=(k%2)?chunk.slice().reverse():chunk;
-      for(const t of order) items.push(ninaPanel(t,targetsId,exp,f));
+      for(const t of order) items.push(ninaPanel(t,targetsId,exp,f,hh,mm,guide));
     });
   }
-  const [hh,mm]=endHHMM.split(":").map(Number);
   const targets={"$id":targetsId,"$type":"NINA.Sequencer.Container.TargetAreaContainer"+T_SEQ,
     "Strategy":strategy(),"Name":"Targets",
     "Conditions":coll("cond",[
@@ -920,7 +969,8 @@ el("dDate").value=todayLocal();
 function doPlan(){
   const p=planNight(el("dDate").value,el("dEnd").value,+el("dAlt").value,
                     +el("dExp").value,+el("dEff").value,+el("dMoon").value,
-                    Math.max(1,+el("dPass").value||1));
+                    Math.max(1,+el("dPass").value||1),
+                    guideOn()?+el("dSettle").value||0:0);
   if(p.error){ alert(p.error); return; }
   CURRENT=p;
   /* centre the view on the planned region */
@@ -938,6 +988,10 @@ el("dScope").addEventListener("change",()=>{
   renderWeather(el("dDate").value); draw();
 });
 el("bPlan").addEventListener("click",doPlan);
+for(const id of ["dGuide","dSettle"]) el(id).addEventListener("change",()=>{
+  CURRENT=null; el("bSave").disabled=true; el("bCsv").disabled=true; el("bNina").disabled=true;
+  renderNight(null); draw();
+});
 el("dAlt").addEventListener("change",renderProgress);
 el("dPass").addEventListener("change",renderProgress);
 el("dDate").addEventListener("change",()=>{ CURRENT=null;
@@ -975,7 +1029,8 @@ el("bSave").addEventListener("click",()=>{
     window:{dark:CURRENT.dusk.toISOString(),end:CURRENT.end.toISOString(),
             minutes:Math.round(CURRENT.windowMin)},
     params:{expSec:+el("dExp").value,minAlt:+el("dAlt").value,
-            efficiency:+el("dEff").value,moonKeepOut:+el("dMoon").value},
+            efficiency:+el("dEff").value,moonKeepOut:+el("dMoon").value,
+            guide:guideOn(),settleSec:guideOn()?+el("dSettle").value||0:0},
     moon:{illum:+CURRENT.moon.illum.toFixed(3),alt:+CURRENT.moon.alt.toFixed(1),
           minSep:CURRENT.moon.minSep!=null?+CURRENT.moon.minSep.toFixed(1):null},
     region:{centreRa:+CURRENT.centre.ra.toFixed(4),centreDec:+CURRENT.centre.dec.toFixed(4),

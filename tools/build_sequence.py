@@ -18,8 +18,15 @@ so the filter wheel moves twice per block instead of twice per panel, focus is
 re-measured on every filter change, and the mount begins each block where the
 previous one ended. A panel is one exposure:
 
-    prep    Slew to Ra/Dec (abort on error) -> Center (abort on error)
+    prep    Stop Guiding -> Slew to Ra/Dec (abort) -> Center (abort) -> Start Guiding
     imaging TakeExposure
+
+Slew and Center each stop guiding and restart it themselves if it was running,
+so leaving the guider up across a panel boundary costs two settles instead of
+one. Stopping it explicitly before the slew and starting it again after the
+solve gives exactly one settle, on the final pointing. Both guider instructions
+continue on error: a field with no usable guide star should cost one unguided
+sub, not the night. Pass --no-guide to leave them out.
 
 Every SwitchFilter carries its own inline FilterInfo rather than a shared $ref.
 Panel names encode the tile centre (RAhhmmss_Dec+ddmmss_F) so frames can be
@@ -121,6 +128,14 @@ def autofocus(parent):
     return {"$id": nid(), "$type": "NINA.Sequencer.SequenceItem.Autofocus.RunAutofocus, NINA.Sequencer",
             "Parent": {"$ref": parent}, "ErrorBehavior": 0, "Attempts": 1}
 
+def stop_guiding(parent):
+    return {"$id": nid(), "$type": "NINA.Sequencer.SequenceItem.Guider.StopGuiding, NINA.Sequencer",
+            "Parent": {"$ref": parent}, "ErrorBehavior": 0, "Attempts": 1}
+
+def start_guiding(parent):
+    return {"$id": nid(), "$type": "NINA.Sequencer.SequenceItem.Guider.StartGuiding, NINA.Sequencer",
+            "ForceCalibration": False, "Parent": {"$ref": parent}, "ErrorBehavior": 0, "Attempts": 1}
+
 def panel_conditions(panel_id, end_hhmm):
     """One iteration, safe skies, and time left to finish - ANDed by NINA.
 
@@ -145,20 +160,27 @@ def container(name, parent, items_fn):
             "Items": coll("item", items), "Triggers": coll("trig", []),
             "Parent": {"$ref": parent}, "ErrorBehavior": 0, "Attempts": 1}
 
-def panel(tile, targets_id, exp, filt, end_hhmm):
+def panel(tile, targets_id, exp, filt, end_hhmm, guide=True):
     dso = nid(); co = radec_parts(tile["ra"], tile["dec"])
     name = sex_name(tile["ra"], tile["dec"], filt)
 
     def prep(pid):
-        return [
+        out = []
+        if guide:
+            out.append(stop_guiding(pid))
+        out.append(
             {"$id": nid(), "$type": "NINA.Sequencer.SequenceItem.Telescope.SlewScopeToRaDec, NINA.Sequencer",
              "Inherited": False,
              "Coordinates": {"$id": nid(), "$type": "NINA.Astrometry.InputCoordinates, NINA.Astrometry", **co},
-             "Parent": {"$ref": pid}, "ErrorBehavior": 1, "Attempts": 2},
+             "Parent": {"$ref": pid}, "ErrorBehavior": 1, "Attempts": 2})
+        out.append(
             {"$id": nid(), "$type": "NINA.Sequencer.SequenceItem.Platesolving.Center, NINA.Sequencer",
              "Inherited": False,
              "Coordinates": {"$id": nid(), "$type": "NINA.Astrometry.InputCoordinates, NINA.Astrometry", **co},
-             "Parent": {"$ref": pid}, "ErrorBehavior": 1, "Attempts": 3}]
+             "Parent": {"$ref": pid}, "ErrorBehavior": 1, "Attempts": 3})
+        if guide:
+            out.append(start_guiding(pid))
+        return out
 
     def img(iid):
         # no SwitchFilter in here - the block already selected the filter
@@ -235,6 +257,8 @@ def main():
     ap.add_argument("--template", required=True, help="your working NINA sequence (Start/End copied verbatim)")
     ap.add_argument("--out", default=None)
     ap.add_argument("--end", default="01:00", help="local cutoff time")
+    ap.add_argument("--no-guide", dest="guide", action="store_false", default=None,
+                    help="omit the per-panel Stop/Start Guiding instructions")
     a = ap.parse_args()
 
     plan = json.loads(Path(a.plan).read_text())
@@ -243,6 +267,7 @@ def main():
     by_id = {t["id"]: t for t in build_grid(plan.get("telescope", "visnjan"))}
     tiles = [by_id[i] for i in plan["planned"] if i in by_id]
     exp = float(plan.get("params", {}).get("expSec", EXP_TIME))
+    guide = plan.get("params", {}).get("guide", True) if a.guide is None else a.guide
 
     targets = next(i for i in doc["Items"]["$values"] if i.get("Name") == "Targets")
     tid = targets["$id"]
@@ -255,7 +280,7 @@ def main():
             items.append(autofocus(tid))
             # serpentine: odd filters retrace the block so the slew home is short
             for t in (reversed(chunk) if k % 2 else chunk):
-                items.append(panel(t, tid, exp, f, a.end))
+                items.append(panel(t, tid, exp, f, a.end, guide))
     targets["Items"]["$values"] = items
     hh, mm = a.end.split(":")
     targets["Conditions"]["$values"] = [
@@ -289,7 +314,8 @@ def main():
     assert not [r for r in refs if r not in set(ids)], "dangling $ref"
     blocks = -(-len(tiles) // AF_BLOCK) * len(filters)
     print(f"{out}  —  {len(tiles)} tiles, {len(tiles)*len(filters)} panels in {blocks} "
-          f"filter blocks, {len(ids)} unique ids, 0 dangling refs")
+          f"filter blocks, guiding {'on' if guide else 'off'}, "
+          f"{len(ids)} unique ids, 0 dangling refs")
 
 if __name__ == "__main__":
     main()

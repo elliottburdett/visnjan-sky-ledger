@@ -9,26 +9,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --void:#f6f3f9; --panel:#ffffff; --panel-2:#ece6f2; --edge:#d8cfe3;
-  --ink:#1e1430; --ink-dim:#655a77;
-  --accent:#4b2e83; --accent-soft:#ebe3f4;
-  --cov-0:#ddd6e6; --cov-p:#c5b9d4; --cov-1:#a48ecb; --cov-2:#6e44a8; --cov-3:#3a1d6e;
-  --plan:#b0800d; --moon:#7a6b9c; --mock:#a8447e;
-  --ok:#2f8f5b; --warn:#b8802b; --bad:#b8453c;
-  --grid:rgba(75,46,131,0.22); --sky:#ece7f2;
-}
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --void:#120a1e; --panel:#1b1130; --panel-2:#251739; --edge:#3a2757;
-    --ink:#f0e9f7; --ink-dim:#a294b8;
-    --accent:#e3b44a; --accent-soft:#33244a;
-    --cov-0:#241a36; --cov-p:#362951; --cov-1:#6b4aa8; --cov-2:#9a6fd8; --cov-3:#cbb0f5;
-    --plan:#ffd166; --moon:#8f83ad; --mock:#e07ab0;
-    --ok:#4fbf7b; --warn:#e0a33f; --bad:#e0655a;
-    --grid:rgba(227,180,74,0.18); --sky:#140c22;
-  }
-}
-:root[data-theme="dark"]{
   --void:#120a1e; --panel:#1b1130; --panel-2:#251739; --edge:#3a2757;
   --ink:#f0e9f7; --ink-dim:#a294b8;
   --accent:#e3b44a; --accent-soft:#33244a;
@@ -144,7 +124,7 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
   <div class="mockbar" id="mockBar">
     <span>✱ SYNTHETIC DATA LOADED</span>
     <span class="sp" id="mockWhat"></span>
-    <label><input type="checkbox" id="mockToggle" checked> count it in coverage</label>
+    <label><input type="checkbox" id="mockToggle"> count it in coverage</label>
   </div>
 
   <main>
@@ -175,7 +155,23 @@ td{padding:5px 6px;border-bottom:1px solid var(--edge);font-family:'IBM Plex Mon
           <option value="visnjan">Višnjan — Tičan (2.45°×1.63°, G/R)</option>
           <option value="gochile-got1">GoChile GoT1 — El Sauce (0.79°×0.53°, Sloan g/r)</option>
           <option value="gochile-got2">GoChile GoT2 — El Sauce (3.34°×2.23°, L only)</option>
+          <option value="__custom__">+ Add another observatory…</option>
         </select></label>
+        <div id="customForm" style="display:none;margin:0 0 10px;padding:10px;background:var(--panel-2);border-radius:8px">
+          <label class="fld"><span>Name</span><input type="text" id="cName" placeholder="e.g. Backyard 8-inch"></label>
+          <div class="two">
+            <label class="fld"><span>Latitude (°, +N)</span><input type="number" id="cLat" step="0.0001" min="-90" max="90" placeholder="45.29"></label>
+            <label class="fld"><span>Longitude (°, +E)</span><input type="number" id="cLon" step="0.0001" min="-180" max="180" placeholder="13.75"></label>
+          </div>
+          <div class="two">
+            <label class="fld"><span>FOV width, RA (°)</span><input type="number" id="cFovRa" step="0.01" min="0.01" placeholder="2.45"></label>
+            <label class="fld"><span>FOV height, Dec (°)</span><input type="number" id="cFovDec" step="0.01" min="0.01" placeholder="1.63"></label>
+          </div>
+          <div class="btnrow">
+            <button class="primary" id="bAddScope" type="button">Use this observatory</button>
+            <button id="bCancelScope" type="button">Cancel</button>
+          </div>
+        </div>
         <label class="fld"><span>Evening date (local)</span><input type="date" id="dDate"></label>
         <div class="two">
           <label class="fld"><span>End time</span><input type="time" id="dEnd" value="01:00"></label>
@@ -369,7 +365,7 @@ function solarCross(dateStr,target){
 function raHM(x){ const h=Math.floor(x/15); return h+"h"+String(Math.round((x/15-h)*60)).padStart(2,"0")+"m"; }
 
 /* ---------------- ledger state ---------------------------------------------- */
-let DB=null, NIGHTS=[], WEATHER={}, CURRENT=null, INCLUDE_MOCK=true;
+let DB=null, NIGHTS=[], WEATHER={}, CURRENT=null, INCLUDE_MOCK=false;
 /* A pass = one complete visit in every survey filter. Tiles can be revisited
    indefinitely; coverage is depth, not a done/not-done flag.
    passes = min over filters of how many times that filter was taken. */
@@ -929,13 +925,55 @@ function doPlan(){
   el("bSave").disabled=false; el("bCsv").disabled=false;
   el("bNina").disabled=!SPEC.nina;
 }
-el("dScope").addEventListener("change",()=>{
-  setScope(el("dScope").value);
+function applyScope(key){
+  setScope(key);
   el("dAlt").value=SPEC.minAlt; el("dEnd").value=SPEC.end; el("dExp").value=SPEC.exposure;
   el("bSave").disabled=true; el("bCsv").disabled=true; el("bNina").disabled=true;
   viewRA=180; viewDec=SITE.lat>=0?20:-20; zoom=1;
   renderSubline(); renderNight(null); renderProgress(); renderMockBar();
   renderWeather(el("dDate").value); draw();
+}
+function tzForLon(lon){
+  const off=Math.max(-12,Math.min(12,Math.round(lon/15)));
+  if(off===0) return "Etc/GMT";
+  return off>0 ? "Etc/GMT-"+off : "Etc/GMT+"+(-off);
+}
+el("dScope").addEventListener("change",()=>{
+  if(el("dScope").value==="__custom__"){
+    el("customForm").style.display="block";
+    return;
+  }
+  el("customForm").style.display="none";
+  applyScope(el("dScope").value);
+});
+el("bCancelScope").addEventListener("click",()=>{
+  el("customForm").style.display="none";
+  el("dScope").value=SCOPE in TELESCOPES ? SCOPE : "visnjan";
+});
+el("bAddScope").addEventListener("click",()=>{
+  const name=el("cName").value.trim()||"Custom observatory";
+  const lat=+el("cLat").value, lon=+el("cLon").value;
+  const fovRa=+el("cFovRa").value, fovDec=+el("cFovDec").value;
+  if(!isFinite(lat)||lat<-90||lat>90){ alert("Enter a latitude between -90 and 90."); return; }
+  if(!isFinite(lon)||lon<-180||lon>180){ alert("Enter a longitude between -180 and 180."); return; }
+  if(!isFinite(fovRa)||fovRa<=0||!isFinite(fovDec)||fovDec<=0){ alert("Enter a field of view greater than zero in both axes."); return; }
+  const decMin=Math.max(-90,Math.round(lat-70)), decMax=Math.min(90,Math.round(lat+70));
+  TELESCOPES.custom={label:name+" (custom)",
+    site:{lat:lat,lon:lon,tz:tzForLon(lon)},
+    optics:"custom", camera:"—",
+    fovRa:fovRa, fovDec:fovDec, overlap:0.10, scale:null,
+    filters:["L"], filterPositions:{}, exposure:30,
+    decMin:decMin, decMax:decMax, minAlt:40, photometric:false, nina:false, end:"03:00"};
+  let opt=el("dScope").querySelector('option[value="custom"]');
+  const label=name+" — custom ("+fovRa.toFixed(2)+"°×"+fovDec.toFixed(2)+"°)";
+  if(!opt){
+    opt=document.createElement("option"); opt.value="custom";
+    el("dScope").insertBefore(opt, el("dScope").querySelector('option[value="__custom__"]'));
+  }
+  opt.textContent=label;
+  el("dScope").value="custom";
+  el("customForm").style.display="none";
+  applyScope("custom");
 });
 el("bPlan").addEventListener("click",doPlan);
 el("dAlt").addEventListener("change",renderProgress);
